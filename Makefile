@@ -1,7 +1,7 @@
 PYTHON := uv run python
 MLFLOW_PORT := 5050
 
-.PHONY: help setup download-data process-data \
+.PHONY: help setup download-data download-dogcat process-data process-dogcat \
         train-vae train-gan train-dm \
         sweep-vae sweep-gan sweep-dm run-all \
         eval-fid interpolate chimera \
@@ -11,7 +11,9 @@ help:
 	@echo "Available targets:"
 	@echo "  make setup            - install deps and pre-commit hooks"
 	@echo "  make download-data    - download Cat Dataset from Kaggle"
+	@echo "  make download-dogcat  - download Dogs vs Cats from Kaggle"
 	@echo "  make process-data     - process cat images into .npy files"
+	@echo "  make process-dogcat   - process dogs+cats images into .npy"
 	@echo "  make train-vae        - train VAE model (MODEL=beta_vae|vqvae)"
 	@echo "  make train-gan        - train GAN model (MODEL=wgan_gp|sn_gan)"
 	@echo "  make train-dm         - train diffusion model (MODEL=ddim|tiny_ldm)"
@@ -37,10 +39,16 @@ setup:
 
 # ─── Data Pipeline ────────────────────────────────────────────
 download-data:
-	$(PYTHON) scripts/download_data.py
+	$(PYTHON) scripts/download_data.py --dataset cats
+
+download-dogcat:
+	$(PYTHON) scripts/download_data.py --dataset dogcat
 
 process-data:
-	$(PYTHON) scripts/process_data.py
+	$(PYTHON) scripts/process_data.py --dataset cats
+
+process-dogcat:
+	$(PYTHON) scripts/process_data.py --dataset dogcat
 
 # ─── Training (single model) ─────────────────────────────────
 train-vae:

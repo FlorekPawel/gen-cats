@@ -98,8 +98,10 @@ def process_dogcat_dataset(
         ]
     )
 
+    from tqdm import tqdm
+
     images: list[Any] = []
-    for idx in indices:
+    for idx in tqdm(indices, desc="Processing dogs+cats", unit="img"):
         img = Image.open(ds.image_paths[idx]).convert("RGB")
         img = resize_crop(img)
         images.append(np.array(img, dtype=np.uint8))
