@@ -1,7 +1,10 @@
 \documentclass[cameraready]{Interspeech}
 \usepackage{float}
+\usepackage{hyperref}
 
-\title{Generative Models for Cat Image Synthesis}
+\graphicspath{{../notebooks/plots/}}
+
+\title{Generative Models for Cat Face Synthesis: A Comparative Study of Variational Autoencoders, Generative Adversarial Networks, and Diffusion Models}
 
 \author[affiliation={1}]{Pawel}{Pozorski}
 \author[affiliation={1}]{Pawel}{Florek}
@@ -12,153 +15,140 @@
 
 \email{\{pawel.pozorski, pawel.florek\}.stud@pw.edu.pl}
 
-\keywords{generative models, GAN, VAE, diffusion, image synthesis, mode collapse, latent interpolation}
+\keywords{generative models, variational autoencoders, generative adversarial networks, diffusion models, image synthesis, cat generation, FID, hyperparameter optimization, mode collapse}
 
 \begin{document}
 
 \maketitle
 
 \begin{abstract}
-We present a systematic comparison of three generative paradigms---generative adversarial networks (GANs), variational autoencoders (VAEs), and denoising diffusion probabilistic models---for unconditional synthesis of cat images. The study emphasizes experimental reproducibility through fixed configuration management, deterministic pseudorandom seeding, and multi-run variance characterization. A single software stack supports training with checkpoint resumption, experiment logging (MLflow), and a shared evaluation protocol comprising Fr\'echet Inception Distance (FID), perceptual diversity measures, and latent-space interpolation. Beyond the primary cat-only benchmark, we outline an exploratory extension to class-conditional generation on a cats-versus-dogs corpus. This document specifies methodology, situates the work relative to prior art, and formalizes the experimental design; quantitative and qualitative results are deferred pending completion of the full training matrix.
+This paper presents a comparative study of three major generative modeling paradigms -- Variational Autoencoders (VAE), Generative Adversarial Networks (GAN), and Diffusion Models -- applied to the synthesis of cat face images. We evaluate multiple architectures within each family: $\beta$-VAE and VQ-VAE-1 (VAE family), WGAN-GP and SN-GAN (GAN family), and DDIM with a Latent Diffusion Model (diffusion family). The study employs structured grid search over key hyperparameters, training with three fixed random seeds to ensure reproducibility. We evaluate models quantitatively using Fréchet Inception Distance (FID) and qualitatively through specific latent space interpolations and mode collapse analysis. Furthermore, we conduct an exploratory extension training our best model on a mixed dataset of dogs and cats to observe distribution averaging phenomena. This work provides a practical framework for comparing generative paradigms.
 \end{abstract}
 
 \section{Introduction}
-Generative modeling seeks to approximate high-dimensional data distributions such that novel samples are statistically faithful to the training domain while exhibiting plausible structure. In image synthesis, three families have become dominant: adversarial training~\cite{goodfellow2014generative}, amortized variational inference with continuous or discrete latents~\cite{kingma2014autoencoding,vandenoord2017neural}, and iterative denoising diffusion~\cite{ho2020denoising}. We investigate all three in a unified setting---synthesis of cat imagery at moderate resolution---so that differences in sample quality, diversity, optimization stability, and sensitivity to initialization may be attributed primarily to the modeling paradigm rather than to unrelated preprocessing or infrastructure choices.
 
-The experimental setting is deliberately bounded by a fixed local setup, which keeps the training and evaluation protocol consistent across runs. Within these limits, we nevertheless adhere to standard quantitative reporting (FID, complementary perceptual metrics) and to qualitative diagnostics of known failure modes, notably mode collapse in adversarial training and oversmoothing in likelihood-based models.
+Generative modeling of images has been a central research challenge in machine learning, with three primary paradigms emerging over the past decade: Variational Autoencoders (VAEs) \cite{kingma2013auto}, Generative Adversarial Networks (GANs) \cite{NIPS2014_f033ed80}, and Diffusion Models \cite{NEURIPS2020_4c5bcfec}. Each paradigm offers distinct theoretical foundations, training dynamics, and trade-offs in quality, diversity, and training stability. VAEs provide a principled probabilistic framework but often produce blurrier samples; GANs generate sharp images but suffer from training instability and mode collapse; diffusion models have recently demonstrated superior sample quality but require longer inference times.
 
-For each family we instantiate a baseline and a full enhanced configuration informed by the literature (e.g., self-attention and spectral normalization in GANs~\cite{zhang2019self,miyato2018spectral}, vector quantization in VAEs~\cite{vandenoord2017neural}, refined schedules and sampling in diffusion~\cite{nichol2021improved}). A separate hyperparameter sweep systematically varies model-specific parameters on both variants to quantify the influence of individual design choices. All primary comparisons are repeated across multiple independent seeds so that point estimates of performance are accompanied by dispersion, reflecting the stochastic nature of non-convex optimization in deep generative modeling.
+The selection of appropriate generative models for practical applications remains highly dependent on specific constraints: available computational resources, target sample quality, required inference speed, and stability during training. In this project, we conduct a systematic comparison of representative architectures across all three paradigms on a well-defined task: generating cat face images from the Kaggle Cat Dataset.
 
-\subsection{Objectives}
-The study is organized around the following objectives:
-\begin{enumerate}
-    \item to synthesize cat images under each of the three paradigms with matched preprocessing and comparable training budgets;
-    \item to contrast baseline and full enhanced variants \emph{within} each paradigm, and to investigate the influence of model-specific hyperparameters via a dedicated sweep;
-    \item to quantify distributional fidelity via FID~\cite{heusel2017gans} and to characterize diversity using perceptual and structural similarity measures~\cite{zhang2018unreasonable,wang2003multiscale};
-    \item to quantify sensitivity of final metrics to random initialization and training stochasticity across seeds;
-    \item to construct latent interpolation trajectories for qualitative assessment of the learned representation;
-    \item to conduct a secondary, exploratory analysis of class-conditional generation on a cats-versus-dogs dataset.
-\end{enumerate}
-
-\subsection{Contributions}
-The principal contributions of this work are as follows:
-\begin{itemize}
-    \item a modular, strongly typed training and evaluation codebase that treats GAN, VAE, and diffusion models behind a common trainer interface, reducing implementation confounds when comparing variants;
-    \item model configurations chosen to remain practical within the shared training setup without abandoning established architectural ideas from the literature;
-    \item automated orchestration of a multi-seed, multi-variant experiment matrix with consistent logging and checkpoint semantics;
-    \item integration of early stopping and resumable training, which is particularly relevant for interrupted runs;
-    \item an optional class-conditional GAN extension for cross-species exploratory synthesis, clearly delineated from the primary cat-only benchmark.
-\end{itemize}
+Our objectives align with the specific project requirements: (i) standardize varying image resolutions utilizing raw annotation data to accommodate limited computing resources; (ii) systematically compare generation quality across three paradigms (VAE, GAN, Diffusion) using quantitative metrics (FID) and qualitative assessment; (iii) directly address mode collapse through stabilized GAN architectures (WGAN-GP with gradient penalty, SN-GAN with spectral normalization); (iv) analyze latent space smoothness via interpolation: generating 10-image sequences (2 random endpoints + 8 linear intermediates) to assess semantic continuity; and (v) explore cross-species generalization by training on mixed "Dogs vs. Cats" data to investigate whether the unconditional model learns to separate classes or exhibits distribution averaging (e.g., chimera-like outputs).
 
 \section{Methodology}
-\subsection{Datasets}
-Two corpora are employed (see Sec.~\ref{sec:exp-design} for acquisition protocol):
-\begin{itemize}
-    \item a large-scale cat image collection for unconditional synthesis;
-    \item a cats-versus-dogs collection for the conditional extension.
-\end{itemize}
 
-Image loading is mediated by dataset-specific PyTorch \texttt{Dataset} implementations. Worker processes receive deterministic seeds to improve reproducibility under multi-process data loading. For the cat corpus, the pipeline prefers a project-local directory tree; if that directory contains no usable images and remote retrieval is permitted, archives are obtained via the Kaggle API and materialized into the same root to preserve stable relative paths for analysis. For the extension corpus, class labels are derived heuristically from file naming conventions or subdirectory structure (e.g., prefixes \texttt{cat.} / \texttt{dog.}).
+\subsection{Datasets and Preprocessing}
 
-All inputs are resized to a fixed spatial resolution and affine-normalized to $[-1, 1]$, which is the conventional dynamic range for GAN and diffusion training and allows parameter sharing of convolutional front ends across model families where applicable.
+The primary dataset consists of over 9,000 cat images sourced from the Kaggle Cat Dataset \cite{crawford2018cat}. Raw images exhibit significant variability in resolution, aspect ratio, and face positioning, which poses a challenge for batch processing and limited computing resources. To address this, we apply the following preprocessing pipeline:
 
-\subsection{Model families and variants}
-The primary training matrix trains two variants per family---a \emph{baseline} and a \emph{full novel}---each repeated across three seeds. A separate hyperparameter sweep (Sec.~\ref{sec:hparam}) then investigates the influence of model-specific parameters on both variants.
+\begin{enumerate}
+    \item \textbf{Annotation Parsing}: Instead of relying on pre-trained face detectors, we extract the exact 9 coordinate points (eyes, mouth, ears) provided in the corresponding \texttt{.cat} annotation files.
+    \item \textbf{Face Cropping}: Bounding boxes are dynamically calculated based on the extreme coordinates of the facial landmarks with an added spatial margin to capture the full face.
+    \item \textbf{Resizing}: Cropped regions are standardized to $128 \times 128$ pixels using bilinear interpolation, drastically reducing VRAM footprint and training time.
+    \item \textbf{Normalization}: Pixel values are normalized to the $[0, 1]$ range for VAE/Diffusion models, and to $[-1, 1]$ for GAN models.
+\end{enumerate}
 
-\subsubsection{GAN family}
-The baseline is a vanilla DCGAN~\cite{radford2016unsupervised} and the full novel variant is SA-DCGAN+, which adds self-attention~\cite{zhang2019self}, spectral normalization~\cite{miyato2018spectral}, DiffAugment, hinge-style objectives, and R1 gradient regularization. The generator maps a low-dimensional Gaussian latent vector to $64\times 64$ RGB imagery; the discriminator maps the image to a univariate realism score. For the cats-versus-dogs extension, both networks accept class embeddings, realizing a conditional GAN in the sense of~\cite{goodfellow2014generative}.
+Comparison of raw vs. processed images is shown in Figure~\ref{fig:preprocessing_comparison}.
 
-\subsubsection{VAE family}
-The baseline is a Gaussian-latent VAE trained with the ELBO~\cite{kingma2014autoencoding}. The full novel variant is VQ-VAE-P: a VQ-VAE~\cite{vandenoord2017neural} with EMA codebook updates, perceptual reconstruction loss, dead-code reset, residual encoder/decoder blocks, and a gated PixelCNN prior.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{preprocessing_comparison.png}
+    \caption{Sample images after preprocessing: cropped and resized to $128 \times 128$ pixels.}
+    \label{fig:preprocessing_comparison}
+\end{figure}
 
-\subsubsection{Diffusion family}
-The baseline is a vanilla DDPM with a linear variance schedule~\cite{ho2020denoising}. The full novel variant is Improved DDPM+ with a cosine schedule, learned variance, DDIM sampling, and self-conditioning~\cite{nichol2021improved}. A compact time-conditioned U-Net predicts the noise $\epsilon$ at each diffusion step. During training, timesteps are drawn uniformly at random and a denoising objective is minimized in expectation; sampling reverses the forward diffusion chain iteratively.
+For the exploratory extension, we utilize the Kaggle "Dogs vs. Cats" competition benchmark dataset \cite{dogs-vs-cats}, which contains $\sim 25,000$ mixed images (Figure~\ref{fig:mixed_samples}). Since this dataset lacks facial landmark annotations, applying the aforementioned coordinate-based cropping procedure is impossible. Instead, to prevent aspect ratio distortion that could negatively impact the FID metric, we apply a scale-and-crop strategy: resizing the shorter edge of the image to 128 pixels, followed by extracting a $128 \times 128$ center crop. This forms a secondary dataset designed to test cross-species distribution averaging.
 
-\subsection{Training framework}
-A shared abstract trainer coordinates family-specific inner loops while exposing a uniform interface for logging, checkpointing, and early stopping. Pseudorandom number generators for Python, NumPy, and PyTorch are initialized from a run-level seed. Scalar summaries (losses, monitored validation proxies where defined) are recorded per epoch to MLflow. Checkpoints serialize model parameters, optimizer state, and training step indices to support seamless resumption. Early termination is enabled by default according to configuration: a monitored scalar is tracked with patience and minimum-improvement thresholds, mitigating wasted compute when optimization stagnates or diverges. Higher-level scripts enumerate the Cartesian product of model family, variant label, and seed without manual book-keeping.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{processed_samples_dogcat.png}
+    \caption{Sample images from the mixed "Dogs vs. Cats" dataset after scale-and-crop preprocessing.}
+    \label{fig:mixed_samples}
+\end{figure}
 
-\subsection{Experimental structure}
-Primary training follows a two-variant-per-family design with shared seed replication. The cat-only benchmark trains a baseline and a full novel variant for each of the three families, each repeated with three seeds ($\{42,123,7\}$), yielding $2\times 3\times 3=18$ independent runs. This structure supports cross-family comparison and baseline-versus-enhanced attribution.
+\subsection{Generative Model Architectures}
 
-\subsection{Hyperparameter influence study}
-\label{sec:hparam}
-To satisfy the requirement of investigating the influence of hyperparameters, we conduct a dedicated two-phase sweep per family, focused on \emph{model-specific} parameters (not learning rate or batch size):
+\subsubsection{Variational Autoencoders (VAE)}
 
-\textbf{Phase~1 (baseline sweep):} Each baseline is trained over a grid of its key parameters and three seeds; the configuration yielding the lowest mean final loss is selected as the ``best baseline.''
+VAEs define a probabilistic generative model via a learned latent variable distribution $q_\phi(z|x)$ parameterized by an encoder network. The generative process is specified by a decoder $p_\theta(x|z)$ where $z \sim \mathcal{N}(0, I)$. We evaluate two VAE variants:
 
-\textbf{Phase~2 (full-novel sweep):} The best baseline parameters are carried forward as defaults, and the full novel variant is trained over its own grid, again with three seeds per configuration.
+\textbf{$\beta$-VAE \cite{higgins2017betavae}:} A standard VAE with convolutional encoder/decoder and a $\beta$ parameter that controls the trade-off between reconstruction accuracy and prior matching. Grid search varies: $\text{latent\_dim} \in \{64, 128\}$, $\beta \in \{1.0, 4.0\}$.
 
-The grids are:
-\begin{itemize}
-    \item \textbf{GAN baseline} (3 configs): \texttt{latent\_dim} $\in\{64,128,256\}$.
-    \item \textbf{SA-DCGAN+ full} (6 configs): \texttt{r1\_gamma} $\in\{1,10,50\}$ $\times$ \texttt{r1\_interval} $\in\{8,16\}$.
-    \item \textbf{VAE baseline} (6 configs): \texttt{latent\_dim} $\in\{64,128,256\}$ $\times$ \texttt{kl\_weight} $\in\{0.5,2.0\}$.
-    \item \textbf{VQ-VAE-P full} (8 configs): \texttt{num\_embeddings} $\in\{256,512\}$ $\times$ \texttt{embedding\_dim} $\in\{64,128\}$ $\times$ \texttt{ema\_decay} $\in\{0.95,0.99\}$.
-    \item \textbf{DDPM baseline} (4 configs): \texttt{timesteps} $\in\{500,1000\}$ $\times$ \texttt{sample\_steps} $\in\{250,500\}$.
-    \item \textbf{Improved DDPM+ full} (8 configs): \texttt{ddim\_steps} $\in\{50,100\}$ $\times$ \texttt{ddim\_eta} $\in\{0.0,0.2\}$ $\times$ \texttt{self\_cond\_prob} $\in\{0.25,0.5\}$.
-\end{itemize}
-This yields 35 configurations $\times$ 3 seeds $=$ 105 sweep runs. Combined with the 18 primary matrix runs and the cats-versus-dogs extension, the total experimental budget remains feasible on our hardware.
+\textbf{VQ-VAE-1:} A discrete VAE using vector quantization in the latent space \cite{NIPS2017_7a98af17}. Instead of a continuous distribution, VQ-VAE discretizes the latent space into a learned codebook to reduce the blurriness typical of standard VAEs. Grid search varies: $\text{codebook\_size} \in \{512, 1024\}$, $\text{feat\_map\_size} \in \{16 \times 16, 8 \times 8\}$, and reconstruction loss (L1 vs. L2).
 
-\subsection{Evaluation protocol}
-Evaluation proceeds along four complementary axes:
-\begin{itemize}
-    \item \textbf{Global fidelity:} FID~\cite{heusel2017gans} between real and generated feature distributions extracted by a pretrained Inception network;
-    \item \textbf{Diversity and perceptual spread:} pairwise LPIPS~\cite{zhang2018unreasonable} and MS-SSIM~\cite{wang2003multiscale} statistics on generated batches;
-    \item \textbf{Geometric structure of latent space:} piecewise-linear interpolation in the generator or VAE latent space (and analogous trajectories for diffusion as implemented);
-    \item \textbf{Robustness:} dispersion of the above metrics across seeds.
-\end{itemize}
+\subsubsection{Generative Adversarial Networks (GAN)}
 
-Dedicated modules implement metric computation; scripts emit rasterized grids and interpolation strips for inclusion in the final manuscript.
+GANs formulate image generation as an adversarial game between a generator $G$ and discriminator $D$. To directly address the mode collapse problem required by this study, we avoid the standard DCGAN and evaluate two stabilized variants:
 
-\subsection{Cats-versus-dogs extension}
-The extension instantiates a class-conditional GAN: class embeddings are concatenated with latent codes in the generator and channel-wise with label maps in the discriminator. Training on imbalanced or mixed-domain imagery is treated as \emph{exploratory}; we emphasize qualitative assessment of class separation versus attribute entanglement rather than leaderboard-style competition scores.
+\textbf{WGAN-GP:} Wasserstein GAN \cite{pmlr-v70-arjovsky17a} with gradient penalty \cite{NIPS2017_892c3b1c} uses the Wasserstein distance and adds a gradient penalty term to enforce the Lipschitz constraint, significantly reducing mode collapse and providing meaningful learning curves. Grid search varies: $\text{n\_critic} \in \{3, 5\}$, batch size $\in \{64, 128\}$, learning rate schedule $\in \{\text{symmetric}, \text{TTUR}\}$.
 
-\section{Related Work and Benchmark Context}
-\label{sec:related}
-\textbf{Adversarial generation.} GANs~\cite{goodfellow2014generative} formulate learning as a two-player game between a generator and a discriminator. DCGAN~\cite{radford2016unsupervised} demonstrated that careful architectural constraints yield stable synthesis of natural images. Nonetheless, adversarial training remains sensitive to hyperparameters and susceptible to mode collapse. Spectral normalization~\cite{miyato2018spectral} constrains the Lipschitz constant of the discriminator, while self-attention~\cite{zhang2019self} captures long-range spatial dependencies; both appear in our full SA-DCGAN+ configuration, and the hyperparameter sweep quantifies the effect of regularization strength.
+\textbf{SN-GAN:} Spectral Normalization GAN \cite{DBLP:journals/corr/abs-1802-05957} stabilizes discriminator training by normalizing weights with their largest singular value. Grid search varies: batch size $\in \{64, 128\}$, learning rate schedule $\in \{\text{symmetric}, \text{TTUR}\}$, horizontal flip augmentation.
 
-\textbf{Latent-variable and quantized representations.} VAEs~\cite{kingma2014autoencoding} optimize a tractable lower bound on the marginal log-likelihood with a Gaussian latent prior, often producing slightly blurred reconstructions. VQ-VAE~\cite{vandenoord2017neural} replaces continuous latents with discrete codes drawn from a learned codebook, improving fidelity and enabling powerful autoregressive priors. Our study contrasts the Gaussian baseline against the full VQ-VAE-P variant and sweeps codebook and loss parameters.
+\subsubsection{Diffusion Models}
 
-\textbf{Diffusion modeling.} DDPMs~\cite{ho2020denoising} define a forward noising process and learn its reverse as a sequence of denoising steps. Subsequent work refined variance schedules and parameterizations to improve sample quality and efficiency~\cite{nichol2021improved}. Diffusion typically demands more function evaluations per sample than single-step generators but offers comparatively stable optimization.
+Diffusion models define a forward process that corrupts images to noise, then learn to reverse this process via a neural network. To mitigate the immense computational cost of diffusion, we focus on optimized architectures:
 
-\textbf{Evaluation methodology.} FID~\cite{heusel2017gans} remains a de facto standard for comparing generative models on natural images. LPIPS~\cite{zhang2018unreasonable} measures perceptual distance using deep features; MS-SSIM~\cite{wang2003multiscale} quantifies multiscale structural agreement. Jointly, these metrics provide complementary views on fidelity and intra-batch diversity.
+\textbf{DDIM:} A faster sampling approach for diffusion models \cite{DBLP:journals/corr/abs-2010-02502} that uses a deterministic sampling procedure, enabling inference in fewer steps. Grid search varies: noise schedule $\in \{\text{linear}, \text{cosine}\}$, base channels $\in \{32, 64\}$.
 
-\textbf{Positioning.} Although Interspeech primarily addresses speech and spoken-language processing, the present manuscript applies the same experimental hygiene expected in rigorous machine-learning research---explicit seeds, versioned configurations, and quantitative metrics---to a vision benchmark chosen for visual clarity of failure modes and ease of qualitative inspection.
+\textbf{Latent Diffusion Model (LDM):} Following the methodology introduced by Rombach et al. \cite{Rombach_2022_CVPR}, we implement a lightweight diffusion model operating in the latent space of a frozen VQ-VAE encoder. This approach drastically reduces computational overhead while preserving generation quality. Grid search varies sampling steps $\in \{50, 100, 200\}$.
 
-\section{Experimental Design and Reporting}
-\label{sec:exp-design}
-\textbf{Compute environment.} Experiments are executed on Apple Silicon with PyTorch compiled for MPS acceleration; the codebase remains portable to CUDA when available. Hyperparameters and architectural constants are declared in a hierarchical YAML configuration to avoid implicit defaults that differ across runs.
+\subsection{Training Setup and Hyperparameter Grid}
 
-\textbf{Primary training matrix.} The cat-only study comprises eighteen training jobs: one baseline and one full novel variant per family, each repeated across three pseudorandom seeds. Each job produces time-series logs, serialized checkpoints, and MLflow metadata sufficient to reconstruct the exact command-line and configuration merge.
+All models employ the Adam optimizer with a default learning rate of $\text{lr} = 2 \times 10^{-4}$ and momentum parameters $(\beta_1, \beta_2) = (0.5, 0.999)$ for stable convergence. Training proceeds for up to 100 epochs with early stopping (patience=15 epochs without improvement on validation loss), enforcing a minimum delta of $10^{-4}$ for metric improvements. Validation is performed after each epoch using the held-out validation set (10\% of the processed cat dataset), and the best model checkpoint is automatically restored after training concludes.
 
-\textbf{Hyperparameter sweep.} In addition to the primary matrix, a two-phase sweep of 35 model-specific configurations $\times$ 3 seeds $=$ 105 runs investigates the influence of key hyperparameters (see Sec.~\ref{sec:hparam}). The sweep first selects the best baseline configuration per family, then carries those settings forward to the full novel variant.
+Each hyperparameter configuration is trained independently across three fixed random seeds $\{42, 123, 7\}$ to assess stability and variance across initialization points. Seed management is enforced globally via PyTorch, NumPy, and Python's built-in random module before each training run, ensuring deterministic behavior on the target hardware. Results are subsequently averaged across seeds for robustness assessment.
 
-\textbf{Optimization and early stopping.} Within each family, optimization hyperparameters are held constant across variants unless that parameter is the explicit subject of the sweep. Early stopping monitors a family-appropriate scalar with fixed patience and minimum relative improvement, terminating training when progress plateaus while still permitting long horizons when monotonic improvement persists. Checkpointing supports recovery from preemption, which is common in mobile workstation settings.
 
-\textbf{Data management.} Cat images reside under a single repository-relative root. If that root is initially empty and downloads are authorized, the acquisition pipeline populates it deterministically from remote sources, avoiding reliance on opaque cache paths for downstream exploratory analysis. The cats-versus-dogs corpus uses a disjoint root with filename-derived labels; results from this stream are explicitly labeled exploratory and are not claimed to match state-of-the-art on the original competition metric.
+\begin{table}[H]
+    \centering
+    \caption{Hyperparameter grid summary across generative model families.}
+    \label{tab:hyperparam_grid}
+    \renewcommand{\arraystretch}{1.4}
+    \resizebox{\linewidth}{!}{%
+    \begin{tabular}{|l|l|l|}
+        \hline
+        \textbf{Model Family} & \textbf{Parameter} & \textbf{Search Space} \\
+        \hline
+        $\beta$-VAE & latent\_dim, $\beta$ & $\{64, 128\} \times \{1.0, 4.0\}$ \\
+        VQ-VAE-1 & codebook, map, loss & $\{512, 1024\} \times \{16, 8\} \times \{L1, L2\}$ \\
+        WGAN-GP & n\_critic, batch, LR & $\{3, 5\} \times \{64, 128\} \times \{sym, TTUR\}$ \\
+        SN-GAN & batch, LR, augment & $\{64, 128\} \times \{sym, TTUR\} \times \{no, hflip\}$ \\
+        DDIM & schedule, channels & $\{linear, cosine\} \times \{32, 64\}$ \\
+        Latent Diffusion Model (LDM) & steps (inference) & $\{50, 100, 200\}$ \\
+        \hline
+    \end{tabular}%
+    }
+\end{table}
 
-\textbf{Post-training analysis.} Upon matrix completion, we estimate FID~\cite{heusel2017gans} from a fixed draw of generated samples per checkpoint, summarize LPIPS and MS-SSIM~\cite{zhang2018unreasonable,wang2003multiscale} distributions, and render latent interpolations. Aggregate tables report central tendency and variability across seeds (mean and standard deviation, or median and interquartile range where distributions appear skewed).
+\subsection{Evaluation Metrics}
 
-\textbf{Upcoming results section.} Section~\ref{sec:results} will consolidate tabular comparisons, seed-sensitivity visualizations, and qualitative panels, linking observed artifacts (e.g., collapse, texture loss, color inconsistency) to the logged quantitative scores and to specific configuration choices.
+\subsubsection{Fréchet Inception Distance (FID)}
+FID measures the distance between generated and real image distributions in the feature space of a pre-trained InceptionV3 network. We compute FID on the validation set, averaging results across the 3 seeds for the best configurations.
+
+\subsubsection{Latent Interpolation Analysis}
+To evaluate the smoothness of the learned latent spaces, we execute a strict interpolation protocol: we select two generated images and their corresponding latent noise matrices ($z_1$ and $z_2$). We interpolate linearly between these two matrices to generate 8 additional intermediate latent matrices. These 8 matrices are passed through the generator, resulting in a continuous grid of 10 images, which are assessed for semantic continuity.
+
+\subsubsection{Exploratory Extension: Mixed Distributions}
+We train Spectral Normalization GAN (SN-GAN) on a mixed dataset containing both cats and dogs, utilizing a preprocessed dataset of $\sim 25,000$ combined images. The goal is to observe whether the unconditional model learns to separate the classes into mode-specific outputs or suffers from distribution averaging, resulting in generating "chimeras" (e.g., cat faces with dog ears or dog faces with feline features). This experiment probes the limits of unconditional generation under multi-modal input distributions. SN-GAN was deliberately chosen for this task. Diffusion models were too computationally expensive for the $\sim 25,000$ image dataset, and VAEs were rejected because their tendency to blur reconstructions would obscure the distribution averaging effect. SN-GAN provides the sharp, detailed outputs necessary to clearly observe cross-class features in the generated samples.
 
 \section{Results}
-\label{sec:results}
-\textit{Quantitative metrics, statistical summaries across seeds, hyperparameter influence plots, and qualitative figures will be inserted after the full training matrix and sweep are finalized.}
+[To be populated]
 
-\section{Conclusion}
-\textit{A discussion interpreting the empirical findings in light of Sec.~\ref{sec:related}, together with limitations of the experimental setup and directions for future work, will be added once results are available.}
+\section{Conclusions}
+[To be populated]
 
 \section{AI Disclosure}
-This manuscript was drafted with assistance from generative language models for phrasing and organization. All scientific judgments, implementation decisions, and interpretations remain the authors' own and theirs responsibility.
+
+This report was edited with AI assistance, to improve clarity, consistency, and formatting. Part of the docstrings, some phrasing and code refactoring or debugging were refined using AI tools, but all scientific decisions and interpretations are the authors' own. The core content, experimental design, and analysis were developed by the authors.
 
 \bibliographystyle{IEEEtran}
 \bibliography{mybib}
 
-\newpage
-~\vfill
-\newpage
 \appendix
 \section{Appendix}
-\textit{Supplementary material---extended plots, per-seed learning curves, and implementation notes---will be appended following the main experimental campaign.}
+
+\subsection{Additional Experimental Details}
+[To be populated]
+
+\subsection{Code Availability}
+All code, configurations, and training logs are available at: \url{https://github.com/FlorekPawel/gen-cats}
 
 \end{document}

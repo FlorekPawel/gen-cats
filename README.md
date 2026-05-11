@@ -1,6 +1,6 @@
 # Gen-Cats: Generative Models for Cat Image Synthesis
 
-Academic project comparing **VAE**, **GAN**, and **Diffusion** models for generating 64×64 cat face images. Trained on Apple M4 (`mps` backend).
+Academic project comparing **VAE**, **GAN**, and **Diffusion** models for generating 128×128 cat face images. Trained on Apple M4 (`mps` backend).
 
 ## Architecture
 
@@ -74,7 +74,7 @@ cp .env.example .env  # set KAGGLE_USERNAME, KAGGLE_KEY
 - `configs/model/` — YAML model configs
 - `scripts/` — CLI entry points (train, sweep, evaluate, interpolate, chimera)
 - `data/raw/` — original Kaggle images (gitignored)
-- `data/processed/` — cropped 64×64 `.npy` files (gitignored)
+- `data/processed/` — cropped 128×128 `.npy` files (gitignored)
 - `report/` — LaTeX report
 
 ## Reproducibility

@@ -14,11 +14,11 @@ from torchvision import transforms
 
 logger = logging.getLogger(__name__)
 
-IMG_SIZE = 64
+IMG_SIZE = 128
 
 
 def default_transform() -> transforms.Compose:
-    """Resize shortest side to 64 px (preserving aspect ratio), then center-crop to 64x64."""
+    """Resize shortest side to default size, then center-crop to default size."""
     return transforms.Compose(
         [
             transforms.Resize(IMG_SIZE),
@@ -33,7 +33,7 @@ class DogsVsCatsDataset(Dataset[torch.Tensor]):
     """Mixed dogs + cats dataset from Kaggle competition.
 
     Loads from directory containing files like cat.0.jpg, dog.0.jpg, etc.
-    Crops center square before resizing to 64x64.
+    Crops center square before resizing.
     """
 
     def __init__(
