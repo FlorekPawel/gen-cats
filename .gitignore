@@ -1,0 +1,52 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.ruff_cache/
+
+# Environment files
+.env
+
+# Virtual environments
+.venv
+.python-version
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.zip
+*.tfvars
+tfplan
+
+# Latex
+*.bbl
+*.synctex.gz
+*.aux
+*.log
+*.out
+*.blg
+
+# .DS_Store
+.DS_Store
+
+# Data
+/data/
+docs/
+checkpoints/
+
+# MLflow
+mlflow.db
+mlruns/
+
+# uv
+uv.lock

@@ -1,0 +1,102 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gen-cats"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+dependencies = [
+    "torch>=2.5.0",
+    "torchvision>=0.20.0",
+    "numpy>=2.0.0",
+    "pillow>=11.0.0",
+    "kagglehub>=0.3.0",
+    "tqdm>=4.67.0",
+    "mlflow>=2.18.0",
+    "omegaconf>=2.3.0",
+    "scipy>=1.14.0",
+    "lpips>=0.1.4",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13.0",
+    "pre-commit>=4.2.0",
+    "pytest>=9.0.2",
+    "ruff>=0.12.0",
+    "types-tqdm>=4.67.0.20250516",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = [
+    ".git",
+    ".venv",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "N",
+    "UP",
+    "B",
+    "C4",
+    "SIM",
+    "RET",
+    "ARG",
+    "PIE",
+    "PTH",
+    "RUF",
+    "S",
+]
+ignore = [
+    "S101",
+    "N802",
+    "N803",
+    "N812",
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+exclude = [".venv/", "build/", "dist/"]
+
+[tool.uv.sources]

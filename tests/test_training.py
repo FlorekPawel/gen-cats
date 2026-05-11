@@ -1,0 +1,238 @@
+"""Tests for training infrastructure: config, early stopping, base trainer, experiment runner."""
+
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+import torch
+from gen_cats.config import (
+    TrainConfig,
+    config_grid,
+    config_grid_with_seeds,
+    config_to_dict,
+)
+from gen_cats.training.base_trainer import BaseTrainer
+from gen_cats.training.early_stopping import EarlyStopping
+from gen_cats.training.experiment_runner import ExperimentRunner
+from torch.utils.data import DataLoader, TensorDataset
+
+
+class TestTrainConfig:
+    def test_defaults(self) -> None:
+        cfg = TrainConfig()
+        assert cfg.max_epochs == 100
+        assert cfg.patience == 15
+        assert cfg.device == "mps"
+
+    def test_override(self) -> None:
+        cfg = TrainConfig(batch_size=32, lr=1e-3)
+        assert cfg.batch_size == 32
+        assert cfg.lr == 1e-3
+
+
+class TestConfigGrid:
+    def test_grid_expansion(self) -> None:
+        base = TrainConfig(model_type="beta_vae")
+        grid = {"latent_dim": [64, 128], "beta": [1.0, 4.0]}
+        configs = config_grid(base, grid)
+        assert len(configs) == 4
+        dims = {c.latent_dim for c in configs}
+        betas = {c.beta for c in configs}
+        assert dims == {64, 128}
+        assert betas == {1.0, 4.0}
+
+    def test_grid_with_seeds(self) -> None:
+        base = TrainConfig()
+        grid = {"latent_dim": [64, 128]}
+        configs = config_grid_with_seeds(base, grid, seeds=[42, 123])
+        assert len(configs) == 4
+        seeds = [c.seed for c in configs]
+        assert seeds.count(42) == 2
+        assert seeds.count(123) == 2
+
+    def test_config_to_dict(self) -> None:
+        cfg = TrainConfig(model_type="wgan_gp", seed=123)
+        d = config_to_dict(cfg)
+        assert d["model_type"] == "wgan_gp"
+        assert d["seed"] == 123
+        assert isinstance(d, dict)
+
+
+class TestEarlyStopping:
+    def test_no_stop_improving(self) -> None:
+        es = EarlyStopping(patience=3)
+        for val in [1.0, 0.9, 0.8, 0.7]:
+            assert not es.step(val)
+
+    def test_stop_after_patience(self) -> None:
+        es = EarlyStopping(patience=3, min_delta=0.0)
+        es.step(1.0)
+        es.step(0.5)
+        assert not es.step(0.6)
+        assert not es.step(0.6)
+        assert es.step(0.6)
+
+    def test_max_mode(self) -> None:
+        es = EarlyStopping(patience=2, mode="max")
+        es.step(0.5)
+        es.step(0.8)
+        assert not es.step(0.7)
+        assert es.step(0.7)
+
+    def test_reset(self) -> None:
+        es = EarlyStopping(patience=1)
+        es.step(1.0)
+        es.step(1.5)
+        assert es.should_stop
+        es.reset()
+        assert not es.should_stop
+        assert es.best_score is None
+
+
+class DummyTrainer(BaseTrainer):
+    """Minimal concrete trainer for testing BaseTrainer mechanics."""
+
+    def build_models(self) -> None:
+        self.model = torch.nn.Linear(3 * 64 * 64, 10)
+        self.model.to(self.device)
+
+    def build_optimizers(self) -> None:
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config.lr)
+
+    def train_step(self, batch: torch.Tensor) -> dict[str, float]:
+        x = batch.view(batch.size(0), -1)
+        out = self.model(x)
+        loss = out.sum()
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return {"loss": loss.item()}
+
+    def validate(self, val_loader: DataLoader[Any]) -> dict[str, float]:
+        total = 0.0
+        n = 0
+        with torch.no_grad():
+            for batch in val_loader:
+                if isinstance(batch, list | tuple):
+                    batch = batch[0]
+                batch = batch.to(self.device)
+                x = batch.view(batch.size(0), -1)
+                out = self.model(x)
+                total += out.sum().item()
+                n += batch.size(0)
+        return {"val_loss": total / max(n, 1)}
+
+    def generate_samples(self, n: int) -> torch.Tensor:
+        return torch.randn(n, 3, 64, 64)
+
+    def state_dicts(self) -> dict[str, Any]:
+        return {
+            "model": self.model.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+        }
+
+    def load_state_dicts(self, checkpoint: dict[str, Any]) -> None:
+        self.model.load_state_dict(checkpoint["model"])
+        self.optimizer.load_state_dict(checkpoint["optimizer"])
+
+
+def _make_loaders(
+    n_train: int = 32, n_val: int = 8, batch_size: int = 8
+) -> tuple[DataLoader[Any], DataLoader[Any]]:
+    train_data = torch.randn(n_train, 3, 64, 64)
+    val_data = torch.randn(n_val, 3, 64, 64)
+    train_loader: DataLoader[Any] = DataLoader(TensorDataset(train_data), batch_size=batch_size)
+    val_loader: DataLoader[Any] = DataLoader(TensorDataset(val_data), batch_size=batch_size)
+    return train_loader, val_loader
+
+
+class TestBaseTrainer:
+    def test_seed_determinism(self) -> None:
+        cfg = TrainConfig(device="cpu", max_epochs=1, seed=42)
+        t = DummyTrainer(cfg)
+        t.seed_everything(42)
+        a = torch.randn(5)
+        t.seed_everything(42)
+        b = torch.randn(5)
+        assert torch.equal(a, b)
+
+    @patch("gen_cats.training.base_trainer.mlflow")
+    def test_fit_runs(self, mock_mlflow: MagicMock, tmp_path: str) -> None:
+        cfg = TrainConfig(
+            device="cpu",
+            max_epochs=3,
+            checkpoint_dir=str(tmp_path),
+            patience=50,
+            sample_interval=1,
+            log_interval=1,
+        )
+        trainer = DummyTrainer(cfg)
+        train_loader, val_loader = _make_loaders()
+        results = trainer.fit(train_loader, val_loader)
+
+        assert "final_epoch" in results
+        assert results["final_epoch"] == 3
+        mock_mlflow.set_experiment.assert_called_once()
+        assert mock_mlflow.log_metrics.call_count > 0
+
+    @patch("gen_cats.training.base_trainer.mlflow")
+    def test_early_stopping_triggers(self, _mock_mlflow: MagicMock, tmp_path: str) -> None:
+        cfg = TrainConfig(
+            device="cpu",
+            max_epochs=100,
+            checkpoint_dir=str(tmp_path),
+            patience=2,
+            sample_interval=100,
+        )
+        trainer = DummyTrainer(cfg)
+        train_loader, val_loader = _make_loaders()
+        results = trainer.fit(train_loader, val_loader)
+        assert results["final_epoch"] < 100
+
+    @patch("gen_cats.training.base_trainer.mlflow")
+    def test_checkpoint_save_load(self, _mock_mlflow: MagicMock, tmp_path: str) -> None:
+        cfg = TrainConfig(
+            device="cpu",
+            max_epochs=2,
+            checkpoint_dir=str(tmp_path),
+            patience=50,
+            sample_interval=100,
+        )
+        trainer = DummyTrainer(cfg)
+        trainer.build_models()
+        trainer.build_optimizers()
+        trainer.state.epoch = 5
+        trainer.save_checkpoint("test")
+
+        trainer2 = DummyTrainer(cfg)
+        trainer2.build_models()
+        trainer2.build_optimizers()
+        assert trainer2.load_checkpoint("test")
+        assert trainer2.state.epoch == 5
+
+
+class TestExperimentRunner:
+    @patch("gen_cats.training.base_trainer.mlflow")
+    def test_runner_runs_all(self, _mock_mlflow: MagicMock, tmp_path: str) -> None:
+        base = TrainConfig(
+            device="cpu",
+            max_epochs=2,
+            checkpoint_dir=str(tmp_path),
+            patience=50,
+            sample_interval=100,
+        )
+        grid = {"lr": [1e-3, 1e-4]}
+        runner = ExperimentRunner(
+            base_config=base,
+            grid=grid,
+            trainer_factory=DummyTrainer,
+            seeds=[42, 7],
+        )
+
+        assert runner.total_runs == 4
+
+        train_loader, val_loader = _make_loaders()
+        results = runner.run_all(train_loader, val_loader)
+        assert len(results) == 4
+        assert all(r["status"] == "success" for r in results)
