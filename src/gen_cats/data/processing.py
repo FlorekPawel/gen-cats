@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
-IMG_SIZE = 64
+IMG_SIZE = 128
 BBOX_PAD_RATIO = 0.35
 
 

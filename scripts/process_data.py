@@ -50,7 +50,7 @@ def main() -> None:
     parser.add_argument("--raw-dir", type=Path, default=RAW_CATS_DIR)
     parser.add_argument("--dogcat-raw-dir", type=Path, default=RAW_DOGCAT_DIR)
     parser.add_argument("--output-dir", type=Path, default=PROCESSED_DIR)
-    parser.add_argument("--size", type=int, default=64)
+    parser.add_argument("--size", type=int, default=128)
     parser.add_argument("--val-fraction", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
