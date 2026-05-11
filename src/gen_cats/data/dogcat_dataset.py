@@ -18,9 +18,11 @@ IMG_SIZE = 64
 
 
 def default_transform() -> transforms.Compose:
+    """Resize shortest side to 64 px (preserving aspect ratio), then center-crop to 64x64."""
     return transforms.Compose(
         [
-            transforms.Resize((IMG_SIZE, IMG_SIZE)),
+            transforms.Resize(IMG_SIZE),
+            transforms.CenterCrop(IMG_SIZE),
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ]
@@ -72,12 +74,6 @@ class DogsVsCatsDataset(Dataset[torch.Tensor]):
 
     def __getitem__(self, idx: int) -> torch.Tensor:
         img = Image.open(self.image_paths[idx]).convert("RGB")
-        # Center crop to square
-        w, h = img.size
-        side = min(w, h)
-        left = (w - side) // 2
-        top = (h - side) // 2
-        img = img.crop((left, top, left + side, top + side))
         return self.transform(img)
 
 
@@ -95,15 +91,17 @@ def process_dogcat_dataset(
     rng = np.random.default_rng(seed)
     indices = rng.permutation(len(ds))
 
+    resize_crop = transforms.Compose(
+        [
+            transforms.Resize(size),
+            transforms.CenterCrop(size),
+        ]
+    )
+
     images: list[Any] = []
     for idx in indices:
         img = Image.open(ds.image_paths[idx]).convert("RGB")
-        w, h = img.size
-        side = min(w, h)
-        left = (w - side) // 2
-        top = (h - side) // 2
-        img = img.crop((left, top, left + side, top + side))
-        img = img.resize((size, size), Image.LANCZOS)
+        img = resize_crop(img)
         images.append(np.array(img, dtype=np.uint8))
 
     arr = np.stack(images)

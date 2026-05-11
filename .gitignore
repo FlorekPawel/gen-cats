@@ -50,3 +50,6 @@ mlruns/
 
 # uv
 uv.lock
+
+# vscode
+.vscode/

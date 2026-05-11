@@ -102,7 +102,7 @@ def config_to_dict(cfg: TrainConfig) -> dict[str, Any]:
     return {f.name: getattr(cfg, f.name) for f in fields(cfg)}
 
 
-SEEDS: list[int] = [42, 123, 7]
+SEEDS: list[int] = [42, 0, 3407]
 
 GRIDS: dict[str, dict[str, list[Any]]] = {
     "beta_vae": {
