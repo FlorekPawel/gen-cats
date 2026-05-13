@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import torch
 from gen_cats.config import (
     TrainConfig,
+    checkpoint_run_slug,
     config_grid,
     config_grid_with_seeds,
     config_to_dict,
@@ -24,11 +25,29 @@ class TestTrainConfig:
         assert cfg.max_epochs == 100
         assert cfg.patience == 15
         assert cfg.device == "mps"
+        assert cfg.sample_interval == 10
 
     def test_override(self) -> None:
         cfg = TrainConfig(batch_size=32, lr=1e-3)
         assert cfg.batch_size == 32
         assert cfg.lr == 1e-3
+
+
+class TestCheckpointRunSlug:
+    def test_differs_by_hparams(self) -> None:
+        a = TrainConfig(model_type="beta_vae", latent_dim=64, seed=42)
+        b = TrainConfig(model_type="beta_vae", latent_dim=128, seed=42)
+        assert checkpoint_run_slug(a) != checkpoint_run_slug(b)
+
+    def test_stable_for_same_config(self) -> None:
+        c = TrainConfig(model_type="wgan_gp", latent_dim=64, seed=7)
+        assert checkpoint_run_slug(c) == checkpoint_run_slug(
+            TrainConfig(model_type="wgan_gp", latent_dim=64, seed=7)
+        )
+
+    def test_run_name_override(self) -> None:
+        d = TrainConfig(run_name="sweep/run-a")
+        assert checkpoint_run_slug(d) == "sweep_run-a"
 
 
 class TestConfigGrid:

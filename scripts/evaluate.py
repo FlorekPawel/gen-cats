@@ -29,6 +29,7 @@ def evaluate_model(model_type: str, args: argparse.Namespace) -> dict[str, float
             device=args.device,
             data_dir=args.data_dir,
             checkpoint_dir=args.checkpoint_dir,
+            run_name=args.run_name,
         )
 
         try:
@@ -71,6 +72,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate FID for trained models")
     parser.add_argument("--data-dir", type=str, default="data/processed")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints")
+    parser.add_argument(
+        "--run-name",
+        type=str,
+        default="",
+        help="Match training run_name (or omit to use default-hparam fingerprint)",
+    )
     parser.add_argument("--device", type=str, default="mps")
     parser.add_argument("--n-samples", type=int, default=1000)
     parser.add_argument("--output", type=str, default="results/fid_scores.json")

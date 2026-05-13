@@ -21,6 +21,7 @@ def generate_interpolation(
     output_dir: str,
     device: str = "mps",
     seed: int = 42,
+    run_name: str = "",
 ) -> None:
     """Load best checkpoint and generate interpolation strip."""
     cfg = TrainConfig(
@@ -28,6 +29,7 @@ def generate_interpolation(
         seed=seed,
         device=device,
         checkpoint_dir=checkpoint_dir,
+        run_name=run_name,
     )
 
     trainer = create_trainer(cfg)
@@ -67,6 +69,12 @@ def generate_interpolation(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate latent interpolation strips")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints")
+    parser.add_argument(
+        "--run-name",
+        type=str,
+        default="",
+        help="Match training run_name (or omit to use default-hparam fingerprint)",
+    )
     parser.add_argument("--output-dir", type=str, default="results/interpolations")
     parser.add_argument("--device", type=str, default="mps")
     parser.add_argument("--seed", type=int, default=42)
@@ -79,6 +87,7 @@ def main() -> None:
             output_dir=args.output_dir,
             device=args.device,
             seed=args.seed,
+            run_name=args.run_name,
         )
 
 

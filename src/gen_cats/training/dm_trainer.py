@@ -60,14 +60,28 @@ class DiffusionTrainer(BaseTrainer):
         """Load best VQ-VAE checkpoint and freeze."""
         from gen_cats.models.vqvae import VQVAE
 
-        ckpt_path = Path(self.config.checkpoint_dir) / "vqvae" / f"best_seed{self.config.seed}.pt"
-        if not ckpt_path.exists():
-            all_ckpts = sorted(Path(self.config.checkpoint_dir).glob("vqvae/best_seed*.pt"))
-            if not all_ckpts:
-                msg = f"No VQ-VAE checkpoint found in {self.config.checkpoint_dir}/vqvae/"
-                raise FileNotFoundError(msg)
-            ckpt_path = all_ckpts[0]
-            logger.info("Using VQ-VAE checkpoint: %s", ckpt_path)
+        root = Path(self.config.checkpoint_dir) / "vqvae"
+        seed = self.config.seed
+
+        def mtime_key(path: Path) -> float:
+            return path.stat().st_mtime
+
+        candidates = sorted(
+            root.glob(f"**/best_seed{seed}.pt"),
+            key=mtime_key,
+            reverse=True,
+        )
+        if not candidates:
+            candidates = sorted(
+                root.glob("**/best_seed*.pt"),
+                key=mtime_key,
+                reverse=True,
+            )
+        if not candidates:
+            msg = f"No VQ-VAE checkpoint found under {root}/"
+            raise FileNotFoundError(msg)
+        ckpt_path = candidates[0]
+        logger.info("Using VQ-VAE checkpoint: %s", ckpt_path)
 
         ckpt = torch.load(ckpt_path, map_location=self.device, weights_only=False)
         vqvae_cfg = ckpt.get("config", {})

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import itertools
+import json
+import re
 from dataclasses import dataclass, fields
 from typing import Any
 
@@ -23,7 +26,7 @@ class TrainConfig:
     device: str = "mps"
     num_workers: int = 0
     log_interval: int = 1
-    sample_interval: int = 5
+    sample_interval: int = 10
     n_sample_images: int = 16
     augment: bool = True
     experiment_name: str = "gen-cats"
@@ -100,6 +103,26 @@ def config_grid_with_seeds(
 def config_to_dict(cfg: TrainConfig) -> dict[str, Any]:
     """Flat dict for MLflow param logging."""
     return {f.name: getattr(cfg, f.name) for f in fields(cfg)}
+
+
+def _sanitize_checkpoint_slug(name: str) -> str:
+    s = re.sub(r"[^\w.\-]+", "_", name.strip(), flags=re.UNICODE).strip("._")
+    return (s or "run")[:120]
+
+
+def checkpoint_run_slug(cfg: TrainConfig) -> str:
+    """Filesystem-safe subdirectory under checkpoints/<model_type>/.
+
+    Uses ``run_name`` when set; otherwise a short hash of training-relevant fields
+    so different hyperparameters never overwrite ``best`` / ``latest`` / sample PNGs.
+    """
+    if (cfg.run_name or "").strip():
+        return _sanitize_checkpoint_slug(cfg.run_name)
+    payload = config_to_dict(cfg)
+    for key in ("checkpoint_dir", "run_name"):
+        payload.pop(key, None)
+    blob = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(blob.encode()).hexdigest()[:12]
 
 
 SEEDS: list[int] = [42, 0, 3407]

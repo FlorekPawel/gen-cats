@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from torchvision.utils import make_grid
 from tqdm import tqdm
 
-from gen_cats.config import TrainConfig, config_to_dict
+from gen_cats.config import TrainConfig, checkpoint_run_slug, config_to_dict
 from gen_cats.training.early_stopping import EarlyStopping
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,8 @@ class BaseTrainer(ABC):
             mode="min",
         )
 
-        self._ckpt_dir = Path(config.checkpoint_dir) / config.model_type
+        slug = checkpoint_run_slug(config)
+        self._ckpt_dir = Path(config.checkpoint_dir) / config.model_type / slug
         self._ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     def seed_everything(self, seed: int) -> None:
