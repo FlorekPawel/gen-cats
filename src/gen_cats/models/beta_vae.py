@@ -1,4 +1,4 @@
-"""Beta-VAE with convolutional encoder/decoder for 64x64 RGB images."""
+"""Beta-VAE with convolutional encoder/decoder for 128x128 RGB images."""
 
 from __future__ import annotations
 
@@ -8,25 +8,32 @@ import torch.nn.functional as F
 
 
 class Encoder(nn.Module):
-    """Conv encoder: (B, 3, 64, 64) -> (B, latent_dim) mean + logvar."""
+    """Conv encoder: (B, 3, 128, 128) -> (B, latent_dim) mean + logvar."""
 
     def __init__(self, latent_dim: int = 128, base_ch: int = 64) -> None:
         super().__init__()
         self.net = nn.Sequential(
+            # 128 -> 64
             nn.Conv2d(3, base_ch, 4, 2, 1),
             nn.BatchNorm2d(base_ch),
             nn.LeakyReLU(0.2, inplace=True),
+            # 64 -> 32
             nn.Conv2d(base_ch, base_ch * 2, 4, 2, 1),
             nn.BatchNorm2d(base_ch * 2),
             nn.LeakyReLU(0.2, inplace=True),
+            # 32 -> 16
             nn.Conv2d(base_ch * 2, base_ch * 4, 4, 2, 1),
             nn.BatchNorm2d(base_ch * 4),
             nn.LeakyReLU(0.2, inplace=True),
+            # 16 -> 8
             nn.Conv2d(base_ch * 4, base_ch * 8, 4, 2, 1),
             nn.BatchNorm2d(base_ch * 8),
             nn.LeakyReLU(0.2, inplace=True),
+            # 8 -> 4
+            nn.Conv2d(base_ch * 8, base_ch * 8, 4, 2, 1),
+            nn.BatchNorm2d(base_ch * 8),
+            nn.LeakyReLU(0.2, inplace=True),
         )
-        # 64 -> 32 -> 16 -> 8 -> 4, so spatial is 4x4
         flat_dim = base_ch * 8 * 4 * 4
         self.fc_mu = nn.Linear(flat_dim, latent_dim)
         self.fc_logvar = nn.Linear(flat_dim, latent_dim)
@@ -37,22 +44,30 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    """ConvTranspose decoder: (B, latent_dim) -> (B, 3, 64, 64)."""
+    """ConvTranspose decoder: (B, latent_dim) -> (B, 3, 128, 128)."""
 
     def __init__(self, latent_dim: int = 128, base_ch: int = 64) -> None:
         super().__init__()
         self.fc = nn.Linear(latent_dim, base_ch * 8 * 4 * 4)
         self.base_ch = base_ch
         self.net = nn.Sequential(
+            # 4 -> 8
+            nn.ConvTranspose2d(base_ch * 8, base_ch * 8, 4, 2, 1),
+            nn.BatchNorm2d(base_ch * 8),
+            nn.ReLU(inplace=True),
+            # 8 -> 16
             nn.ConvTranspose2d(base_ch * 8, base_ch * 4, 4, 2, 1),
             nn.BatchNorm2d(base_ch * 4),
             nn.ReLU(inplace=True),
+            # 16 -> 32
             nn.ConvTranspose2d(base_ch * 4, base_ch * 2, 4, 2, 1),
             nn.BatchNorm2d(base_ch * 2),
             nn.ReLU(inplace=True),
+            # 32 -> 64
             nn.ConvTranspose2d(base_ch * 2, base_ch, 4, 2, 1),
             nn.BatchNorm2d(base_ch),
             nn.ReLU(inplace=True),
+            # 64 -> 128
             nn.ConvTranspose2d(base_ch, 3, 4, 2, 1),
             nn.Tanh(),
         )

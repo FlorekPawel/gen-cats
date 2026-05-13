@@ -1,4 +1,4 @@
-"""Time-conditioned U-Net for denoising diffusion on 64x64 images."""
+"""Time-conditioned U-Net for denoising diffusion on 128x128 images."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ class UNet(nn.Module):
     """Compact U-Net for diffusion.
 
     4-level encoder/decoder with skip connections.
-    Input/output: (B, in_ch, 64, 64).
+    Input/output: (B, in_ch, H, W) — fully convolutional.
 
     Args:
         in_ch: input channels (3 for pixel-space, embedding_dim for latent)

@@ -28,7 +28,7 @@ def default_transform(augment: bool = False) -> transforms.Compose:
 
 
 class CatFaceDataset(Dataset[torch.Tensor]):
-    """Dataset backed by a .npy file of shape (N, 64, 64, 3) uint8 images.
+    """Dataset backed by a .npy file of shape (N, H, W, 3) uint8 images.
 
     Args:
         npy_path: path to .npy file

@@ -1,4 +1,4 @@
-"""VQ-VAE-1 with discrete codebook for 64x64 RGB images."""
+"""VQ-VAE-1 with discrete codebook for 128x128 RGB images."""
 
 from __future__ import annotations
 
@@ -57,31 +57,36 @@ class VectorQuantizer(nn.Module):
 
 
 class VQVAEEncoder(nn.Module):
-    """Encoder: (B, 3, 64, 64) -> (B, embedding_dim, H', W')."""
+    """Encoder: (B, 3, 128, 128) -> (B, embedding_dim, H', W')."""
 
     def __init__(self, embedding_dim: int = 64, feature_map_size: int = 16) -> None:
         super().__init__()
         layers: list[nn.Module] = [
+            # 128 -> 64
             nn.Conv2d(3, 64, 4, 2, 1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
+            # 64 -> 32
             nn.Conv2d(64, 128, 4, 2, 1),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
+            # 32 -> 16
+            nn.Conv2d(128, 256, 4, 2, 1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
         ]
-        # 64 -> 32 -> 16
         if feature_map_size == 8:
             layers.extend(
                 [
-                    nn.Conv2d(128, 256, 4, 2, 1),
+                    # 16 -> 8
+                    nn.Conv2d(256, 256, 4, 2, 1),
                     nn.BatchNorm2d(256),
                     nn.ReLU(inplace=True),
                     nn.Conv2d(256, embedding_dim, 3, 1, 1),
                 ]
             )
         else:
-            # feature_map_size == 16
-            layers.append(nn.Conv2d(128, embedding_dim, 3, 1, 1))
+            layers.append(nn.Conv2d(256, embedding_dim, 3, 1, 1))
 
         self.net = nn.Sequential(*layers)
 
@@ -90,7 +95,7 @@ class VQVAEEncoder(nn.Module):
 
 
 class VQVAEDecoder(nn.Module):
-    """Decoder: (B, embedding_dim, H', W') -> (B, 3, 64, 64)."""
+    """Decoder: (B, embedding_dim, H', W') -> (B, 3, 128, 128)."""
 
     def __init__(self, embedding_dim: int = 64, feature_map_size: int = 16) -> None:
         super().__init__()
@@ -99,6 +104,7 @@ class VQVAEDecoder(nn.Module):
                 nn.Conv2d(embedding_dim, 256, 3, 1, 1),
                 nn.BatchNorm2d(256),
                 nn.ReLU(inplace=True),
+                # 8 -> 16
                 nn.ConvTranspose2d(256, 128, 4, 2, 1),
                 nn.BatchNorm2d(128),
                 nn.ReLU(inplace=True),
@@ -112,9 +118,15 @@ class VQVAEDecoder(nn.Module):
 
         layers.extend(
             [
+                # 16 -> 32
+                nn.ConvTranspose2d(128, 128, 4, 2, 1),
+                nn.BatchNorm2d(128),
+                nn.ReLU(inplace=True),
+                # 32 -> 64
                 nn.ConvTranspose2d(128, 64, 4, 2, 1),
                 nn.BatchNorm2d(64),
                 nn.ReLU(inplace=True),
+                # 64 -> 128
                 nn.ConvTranspose2d(64, 3, 4, 2, 1),
                 nn.Tanh(),
             ]

@@ -37,7 +37,7 @@ class TestLinearInterpolation:
 
 class TestSaveGrid:
     def test_saves_png(self, tmp_path: Path) -> None:
-        images = torch.randn(10, 3, 64, 64)
+        images = torch.randn(10, 3, 128, 128)
         path = save_interpolation_grid(images, tmp_path / "test_grid.png")
         assert path.exists()
         assert path.suffix == ".png"
@@ -74,7 +74,7 @@ class TestDogsVsCatsDataset:
         ds = DogsVsCatsDataset(tmp_path)
         assert len(ds) == 10
         sample = ds[0]
-        assert sample.shape == (3, 64, 64)
+        assert sample.shape == (3, 128, 128)
         assert sample.min() >= -1.0
         assert sample.max() <= 1.0
 

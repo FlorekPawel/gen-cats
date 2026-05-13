@@ -16,7 +16,7 @@ def _maybe_sn(layer: nn.Module, use_sn: bool) -> nn.Module:
 
 
 class Discriminator(nn.Module):
-    """Conv discriminator: (B, 3, 64, 64) -> (B, 1).
+    """Conv discriminator: (B, 3, 128, 128) -> (B, 1).
 
     For WGAN-GP: no spectral norm, output is unbounded (no sigmoid).
     For SN-GAN: spectral norm on all conv+linear layers.
@@ -27,19 +27,22 @@ class Discriminator(nn.Module):
         sn = use_spectral_norm
 
         self.net = nn.Sequential(
-            # 64 → 32
+            # 128 -> 64
             _maybe_sn(nn.Conv2d(3, base_ch, 4, 2, 1, bias=False), sn),
             nn.LeakyReLU(0.2, inplace=True),
-            # 32 → 16
+            # 64 -> 32
             _maybe_sn(nn.Conv2d(base_ch, base_ch * 2, 4, 2, 1, bias=False), sn),
             nn.LeakyReLU(0.2, inplace=True),
-            # 16 → 8
+            # 32 -> 16
             _maybe_sn(nn.Conv2d(base_ch * 2, base_ch * 4, 4, 2, 1, bias=False), sn),
             nn.LeakyReLU(0.2, inplace=True),
-            # 8 → 4
+            # 16 -> 8
             _maybe_sn(nn.Conv2d(base_ch * 4, base_ch * 8, 4, 2, 1, bias=False), sn),
             nn.LeakyReLU(0.2, inplace=True),
-            # 4 → 1
+            # 8 -> 4
+            _maybe_sn(nn.Conv2d(base_ch * 8, base_ch * 8, 4, 2, 1, bias=False), sn),
+            nn.LeakyReLU(0.2, inplace=True),
+            # 4 -> 1
             _maybe_sn(nn.Conv2d(base_ch * 8, 1, 4, 1, 0, bias=False), sn),
         )
         self._init_weights()

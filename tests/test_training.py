@@ -94,7 +94,7 @@ class DummyTrainer(BaseTrainer):
     """Minimal concrete trainer for testing BaseTrainer mechanics."""
 
     def build_models(self) -> None:
-        self.model = torch.nn.Linear(3 * 64 * 64, 10)
+        self.model = torch.nn.Linear(3 * 128 * 128, 10)
         self.model.to(self.device)
 
     def build_optimizers(self) -> None:
@@ -103,7 +103,7 @@ class DummyTrainer(BaseTrainer):
     def train_step(self, batch: torch.Tensor) -> dict[str, float]:
         x = batch.view(batch.size(0), -1)
         out = self.model(x)
-        loss = out.sum()
+        loss = (out**2).mean()
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -119,12 +119,12 @@ class DummyTrainer(BaseTrainer):
                 batch = batch.to(self.device)
                 x = batch.view(batch.size(0), -1)
                 out = self.model(x)
-                total += out.sum().item()
-                n += batch.size(0)
+                total += (out**2).mean().item()
+                n += 1
         return {"val_loss": total / max(n, 1)}
 
     def generate_samples(self, n: int) -> torch.Tensor:
-        return torch.randn(n, 3, 64, 64)
+        return torch.randn(n, 3, 128, 128)
 
     def state_dicts(self) -> dict[str, Any]:
         return {
@@ -140,8 +140,8 @@ class DummyTrainer(BaseTrainer):
 def _make_loaders(
     n_train: int = 32, n_val: int = 8, batch_size: int = 8
 ) -> tuple[DataLoader[Any], DataLoader[Any]]:
-    train_data = torch.randn(n_train, 3, 64, 64)
-    val_data = torch.randn(n_val, 3, 64, 64)
+    train_data = torch.randn(n_train, 3, 128, 128)
+    val_data = torch.randn(n_val, 3, 128, 128)
     train_loader: DataLoader[Any] = DataLoader(TensorDataset(train_data), batch_size=batch_size)
     val_loader: DataLoader[Any] = DataLoader(TensorDataset(val_data), batch_size=batch_size)
     return train_loader, val_loader
@@ -180,15 +180,15 @@ class TestBaseTrainer:
     def test_early_stopping_triggers(self, _mock_mlflow: MagicMock, tmp_path: str) -> None:
         cfg = TrainConfig(
             device="cpu",
-            max_epochs=100,
+            max_epochs=300,
             checkpoint_dir=str(tmp_path),
             patience=2,
-            sample_interval=100,
+            sample_interval=300,
         )
         trainer = DummyTrainer(cfg)
         train_loader, val_loader = _make_loaders()
         results = trainer.fit(train_loader, val_loader)
-        assert results["final_epoch"] < 100
+        assert results["final_epoch"] < 300
 
     @patch("gen_cats.training.base_trainer.mlflow")
     def test_checkpoint_save_load(self, _mock_mlflow: MagicMock, tmp_path: str) -> None:

@@ -61,8 +61,8 @@ class TestCropCatFace:
     def test_crop_output_size(self, sample_image: Path) -> None:
         img = Image.open(sample_image).convert("RGB")
         ann = parse_cat_annotation(sample_image.with_suffix(".jpg.cat"))
-        cropped = crop_cat_face(img, ann, size=64)
-        assert cropped.size == (64, 64)
+        cropped = crop_cat_face(img, ann, size=128)
+        assert cropped.size == (128, 128)
 
     def test_crop_custom_size(self, sample_image: Path) -> None:
         img = Image.open(sample_image).convert("RGB")
@@ -91,7 +91,7 @@ class TestProcessDataset:
         assert stats["val"] >= 1
 
         train_data = np.load(out / "train.npy")
-        assert train_data.shape[1:] == (64, 64, 3)
+        assert train_data.shape[1:] == (128, 128, 3)
         assert train_data.dtype == np.uint8
 
     def test_process_empty_dir_raises(self, tmp_path: Path) -> None:
@@ -104,7 +104,7 @@ class TestProcessDataset:
 class TestCatFaceDataset:
     @pytest.fixture
     def npy_file(self, tmp_path: Path) -> Path:
-        data = np.random.randint(0, 255, (50, 64, 64, 3), dtype=np.uint8)
+        data = np.random.randint(0, 255, (50, 128, 128, 3), dtype=np.uint8)
         path = tmp_path / "train.npy"
         np.save(path, data)
         return path
@@ -117,7 +117,7 @@ class TestCatFaceDataset:
         ds = CatFaceDataset(npy_file)
         sample = ds[0]
         assert isinstance(sample, torch.Tensor)
-        assert sample.shape == (3, 64, 64)
+        assert sample.shape == (3, 128, 128)
 
     def test_getitem_range(self, npy_file: Path) -> None:
         ds = CatFaceDataset(npy_file)
@@ -128,9 +128,9 @@ class TestCatFaceDataset:
     def test_augmented_dataset(self, npy_file: Path) -> None:
         ds = CatFaceDataset(npy_file, augment=True)
         sample = ds[0]
-        assert sample.shape == (3, 64, 64)
+        assert sample.shape == (3, 128, 128)
 
     def test_custom_transform(self, npy_file: Path) -> None:
         t = default_transform(augment=False)
         ds = CatFaceDataset(npy_file, transform=t)
-        assert ds[0].shape == (3, 64, 64)
+        assert ds[0].shape == (3, 128, 128)

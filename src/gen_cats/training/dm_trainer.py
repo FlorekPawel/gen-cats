@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class DiffusionTrainer(BaseTrainer):
     """Handles pixel-space DDIM and Tiny LDM.
 
-    For "ddim": U-Net predicts noise on 64x64 pixel images.
+    For "ddim": U-Net predicts noise on 128x128 pixel images.
     For "tiny_ldm": U-Net predicts noise in VQ-VAE latent space;
                     frozen encoder/decoder loaded from best VQ-VAE checkpoint.
     """
@@ -158,7 +158,7 @@ class DiffusionTrainer(BaseTrainer):
             h = self.vqvae.feature_map_size
             shape = (n, self.vqvae.embedding_dim, h, h)
         else:
-            shape = (n, 3, 64, 64)
+            shape = (n, 3, 128, 128)
 
         z = self.scheduler.ddim_sample(model, shape, self.device, ddim_steps=self.config.ddim_steps)
         return self._decode(z)
