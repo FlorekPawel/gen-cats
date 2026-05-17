@@ -29,6 +29,8 @@ class TrainState:
     epoch: int = 0
     global_step: int = 0
     best_metric: float = float("inf")
+    finished: bool = False
+    early_stopped: bool = False
 
 
 class BaseTrainer(ABC):
@@ -88,6 +90,10 @@ class BaseTrainer(ABC):
     def load_state_dicts(self, checkpoint: dict[str, Any]) -> None:
         """Restore model/optimizer states from checkpoint."""
 
+    def use_early_stopping(self) -> bool:
+        """Whether to stop training when the monitored metric plateaus."""
+        return True
+
     def save_checkpoint(self, tag: str = "latest") -> Path:
         path = self._ckpt_dir / f"{tag}_seed{self.config.seed}.pt"
         payload: dict[str, Any] = {
@@ -96,6 +102,13 @@ class BaseTrainer(ABC):
                 "epoch": self.state.epoch,
                 "global_step": self.state.global_step,
                 "best_metric": self.state.best_metric,
+                "finished": self.state.finished,
+                "early_stopped": self.state.early_stopped,
+            },
+            "early_stopping": {
+                "counter": self.early_stopping.counter,
+                "best_score": self.early_stopping.best_score,
+                "should_stop": self.early_stopping.should_stop,
             },
             **self.state_dicts(),
         }
@@ -112,8 +125,22 @@ class BaseTrainer(ABC):
         self.state.epoch = ts["epoch"]
         self.state.global_step = ts["global_step"]
         self.state.best_metric = ts["best_metric"]
+        self.state.finished = ts.get("finished", False)
+        self.state.early_stopped = ts.get("early_stopped", False)
+        es = checkpoint.get("early_stopping")
+        if es is not None:
+            self.early_stopping.counter = es["counter"]
+            self.early_stopping.best_score = es["best_score"]
+            self.early_stopping.should_stop = es["should_stop"]
         self.load_state_dicts(checkpoint)
-        logger.info("Resumed from %s (epoch %d)", path, self.state.epoch)
+        if self.state.finished:
+            logger.info(
+                "Run already finished at epoch %d (early_stopped=%s), will not resume training",
+                self.state.epoch + 1,
+                self.state.early_stopped,
+            )
+        else:
+            logger.info("Resumed from %s (epoch %d)", path, self.state.epoch)
         return True
 
     def _log_samples(self, epoch: int) -> None:
@@ -146,6 +173,14 @@ class BaseTrainer(ABC):
         self.build_models()
         self.build_optimizers()
         self.load_checkpoint("latest")
+
+        if self.state.finished:
+            return {
+                "final_epoch": self.state.epoch + 1,
+                "best_metric": self.state.best_metric,
+                "early_stopped": self.state.early_stopped,
+                "skipped": True,
+            }
 
         mlflow.set_experiment(self.config.experiment_name)
 
@@ -206,13 +241,24 @@ class BaseTrainer(ABC):
                     }
                 )
 
-                if self.early_stopping.step(monitor_val):
+                if (
+                    epoch + 1 >= self.config.min_epochs
+                    and self.use_early_stopping()
+                    and self.early_stopping.step(monitor_val)
+                ):
                     logger.info("Early stopping at epoch %d", epoch + 1)
+                    self.state.finished = True
+                    self.state.early_stopped = True
+                    self.save_checkpoint("latest")
                     break
+            else:
+                self.state.finished = True
+                self.save_checkpoint("latest")
 
             final_metrics = {
                 "final_epoch": self.state.epoch + 1,
                 "best_metric": self.state.best_metric,
+                "early_stopped": self.state.early_stopped,
             }
             mlflow.log_metrics(final_metrics)
 

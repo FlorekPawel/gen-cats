@@ -26,6 +26,7 @@ class TestTrainConfig:
         assert cfg.patience == 15
         assert cfg.device == "mps"
         assert cfg.sample_interval == 10
+        assert cfg.min_epochs == 50
 
     def test_override(self) -> None:
         cfg = TrainConfig(batch_size=32, lr=1e-3)
@@ -202,12 +203,49 @@ class TestBaseTrainer:
             max_epochs=300,
             checkpoint_dir=str(tmp_path),
             patience=2,
+            min_epochs=0,
             sample_interval=300,
         )
         trainer = DummyTrainer(cfg)
         train_loader, val_loader = _make_loaders()
         results = trainer.fit(train_loader, val_loader)
         assert results["final_epoch"] < 300
+        assert results.get("early_stopped") is True
+        assert trainer.state.finished is True
+
+    @patch("gen_cats.training.base_trainer.mlflow")
+    def test_early_stop_not_resumed(self, _mock_mlflow: MagicMock, tmp_path: str) -> None:
+        cfg = TrainConfig(
+            device="cpu",
+            max_epochs=300,
+            checkpoint_dir=str(tmp_path),
+            patience=2,
+            min_epochs=0,
+            sample_interval=300,
+        )
+        train_loader, val_loader = _make_loaders()
+        first = DummyTrainer(cfg).fit(train_loader, val_loader)
+        assert first["final_epoch"] < 300
+
+        second = DummyTrainer(cfg).fit(train_loader, val_loader)
+        assert second.get("skipped") is True
+        assert second["final_epoch"] == first["final_epoch"]
+
+    @patch("gen_cats.training.base_trainer.mlflow")
+    def test_min_epochs_defers_early_stop(self, _mock_mlflow: MagicMock, tmp_path: str) -> None:
+        cfg = TrainConfig(
+            device="cpu",
+            max_epochs=20,
+            checkpoint_dir=str(tmp_path),
+            patience=2,
+            min_epochs=100,
+            sample_interval=100,
+        )
+        trainer = DummyTrainer(cfg)
+        train_loader, val_loader = _make_loaders()
+        results = trainer.fit(train_loader, val_loader)
+        assert results["final_epoch"] == 20
+        assert results.get("early_stopped") is not True
 
     @patch("gen_cats.training.base_trainer.mlflow")
     def test_checkpoint_save_load(self, _mock_mlflow: MagicMock, tmp_path: str) -> None:

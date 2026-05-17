@@ -30,6 +30,10 @@ class DiffusionTrainer(BaseTrainer):
     unet: UNet
     scheduler: DDIMScheduler
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.config.early_stop_metric = "val_loss"
+
     def build_models(self) -> None:
         is_ldm = self.config.model_type == "tiny_ldm"
 

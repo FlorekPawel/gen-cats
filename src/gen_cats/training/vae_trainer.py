@@ -18,6 +18,11 @@ class VAETrainer(BaseTrainer):
 
     model: BetaVAE | VQVAE
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Reconstruction only — total loss includes KL / VQ terms that plateau early.
+        self.config.early_stop_metric = "recon"
+
     def build_models(self) -> None:
         if self.config.model_type == "vqvae":
             self.model = VQVAE(

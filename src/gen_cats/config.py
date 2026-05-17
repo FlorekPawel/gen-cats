@@ -19,14 +19,14 @@ class TrainConfig:
     lr: float = 2e-4
     lr_d: float | None = None
     lr_g: float | None = None
-    max_epochs: int = 100
+    max_epochs: int = 1000
     seed: int = 42
     data_dir: str = "data/processed"
     checkpoint_dir: str = "checkpoints"
     device: str = "mps"
     num_workers: int = 0
     log_interval: int = 1
-    sample_interval: int = 10
+    sample_interval: int = 5
     n_sample_images: int = 16
     augment: bool = True
     experiment_name: str = "gen-cats"
@@ -35,6 +35,7 @@ class TrainConfig:
     # Early stopping
     patience: int = 15
     min_delta: float = 1e-4
+    min_epochs: int = 20
     early_stop_metric: str = "val_loss"
 
     # Model-specific params stored as flat fields
