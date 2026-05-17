@@ -18,11 +18,15 @@ logger = logging.getLogger(__name__)
 MODEL_TYPES = ["beta_vae", "vqvae", "wgan_gp", "sn_gan", "ddim"]
 
 
-def evaluate_model(model_type: str, args: argparse.Namespace) -> dict[str, float]:
-    """Compute FID for a model type across seeds."""
-    fid_scores: list[float] = []
+def evaluate_model(
+    model_type: str,
+    args: argparse.Namespace,
+    seeds: list[int],
+) -> dict[str, float | str | dict[str, float]]:
+    """Compute FID for a model type across the given seeds."""
+    per_seed: dict[str, float] = {}
 
-    for seed in SEEDS:
+    for seed in seeds:
         cfg = TrainConfig(
             model_type=model_type,
             seed=seed,
@@ -49,19 +53,22 @@ def evaluate_model(model_type: str, args: argparse.Namespace) -> dict[str, float
             fid = compute_fid_from_loaders(
                 val_loader, gen_fn, n_samples=args.n_samples, device=torch.device(cfg.device)
             )
-            fid_scores.append(fid)
+            per_seed[str(seed)] = fid
             logger.info("FID %s seed=%d: %.2f", model_type, seed, fid)
 
         except Exception:
             logger.exception("Failed to evaluate %s seed=%d", model_type, seed)
 
-    if not fid_scores:
+    if not per_seed:
         return {"model": model_type, "mean_fid": float("nan"), "std_fid": float("nan")}
 
     import numpy as np
 
+    fid_scores = list(per_seed.values())
     return {
         "model": model_type,
+        "seeds": list(per_seed.keys()),
+        "per_seed": per_seed,
         "mean_fid": float(np.mean(fid_scores)),
         "std_fid": float(np.std(fid_scores)),
         "fid_scores": fid_scores,
@@ -81,11 +88,19 @@ def main() -> None:
     parser.add_argument("--device", type=str, default="mps")
     parser.add_argument("--n-samples", type=int, default=1000)
     parser.add_argument("--output", type=str, default="results/fid_scores.json")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Single seed only (default: all SEEDS)",
+    )
     args = parser.parse_args()
+
+    seeds = [args.seed] if args.seed is not None else SEEDS
 
     results = []
     for model_type in MODEL_TYPES:
-        result = evaluate_model(model_type, args)
+        result = evaluate_model(model_type, args, seeds)
         results.append(result)
         logger.info(
             "%s: FID = %.2f +/- %.2f", result["model"], result["mean_fid"], result["std_fid"]

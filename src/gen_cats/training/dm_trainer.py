@@ -63,13 +63,10 @@ class DiffusionTrainer(BaseTrainer):
         """Load best VQ-VAE checkpoint and freeze."""
         from gen_cats.models.vqvae_checkpoint import load_frozen_vqvae
 
-        vqvae_seed = getattr(self.config, "vqvae_seed", self.config.seed)
-        run_name = getattr(self.config, "vqvae_run_name", "")
         self.vqvae, _, self._vqvae_ckpt = load_frozen_vqvae(
             self.config.checkpoint_dir,
             self.device,
-            seed=vqvae_seed,
-            run_name=run_name,
+            self.config,
         )
         logger.info("Using VQ-VAE checkpoint: %s", self._vqvae_ckpt)
 
@@ -162,6 +159,8 @@ class DiffusionTrainer(BaseTrainer):
         }
         if self.ema_unet is not None:
             d["ema_unet"] = self.ema_unet.state_dict()
+        if self.vqvae is not None:
+            d["vqvae_checkpoint"] = str(self._vqvae_ckpt)
         return d
 
     def load_state_dicts(self, checkpoint: dict[str, Any]) -> None:

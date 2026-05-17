@@ -2,9 +2,9 @@ PYTHON := uv run python
 MLFLOW_PORT := 5050
 
 .PHONY: help setup download-data download-dogcat process-data process-dogcat \
-        train-vae train-gan train-dm train-pixelcnn compare-priors \
+        train-vae train-gan train-dm train-pixelcnn pixelcnn-experiment \
         sweep-vae sweep-gan sweep-dm run-all \
-        eval-fid interpolate chimera \
+        eval eval-fid interpolate chimera \
         mlflow test lint format pre-commit pre-commit-all clean
 
 help:
@@ -17,15 +17,16 @@ help:
 	@echo "  make train-vae        - train VAE model (MODEL=beta_vae|vqvae)"
 	@echo "  make train-gan        - train GAN model (MODEL=wgan_gp|sn_gan)"
 	@echo "  make train-dm         - train diffusion model (MODEL=ddim|tiny_ldm)"
-	@echo "  make train-pixelcnn   - train PixelCNN prior on frozen VQ-VAE codes"
-	@echo "  make compare-priors   - 16-sample grid: PixelCNN vs Tiny LDM + timings"
+	@echo "  make train-pixelcnn      - train PixelCNN (single SEED)"
+	@echo "  make pixelcnn-experiment - train PixelCNN x3 seeds + compare vs Tiny LDM"
 	@echo "  make sweep-vae        - run VAE grid sweep"
 	@echo "  make sweep-gan        - run GAN grid sweep"
 	@echo "  make sweep-dm         - run diffusion grid sweep"
-	@echo "  make run-all          - run all sweeps"
-	@echo "  make eval-fid         - compute FID metrics"
-	@echo "  make interpolate      - generate interpolation strips"
-	@echo "  make chimera          - run Dogs vs Cats chimera experiment"
+	@echo "  make run-all          - all sweeps + pixelcnn-experiment"
+	@echo "  make eval             - FID + interpolations (x3 seeds each)"
+	@echo "  make eval-fid         - FID only"
+	@echo "  make interpolate      - interpolation strips only"
+	@echo "  make chimera          - dog+cat chimera only (needs process-dogcat)"
 	@echo "  make mlflow           - start local MLflow UI"
 	@echo "  make test             - run tests"
 	@echo "  make lint             - run lint checks"
@@ -63,18 +64,25 @@ train-gan:
 
 train-dm:
 	$(PYTHON) scripts/train.py --model-type $(or $(MODEL),ddim) --seed $(or $(SEED),42) \
-		--vqvae-seed $(or $(VQVAE_SEED),42) --max-epochs $(or $(EPOCHS),1000) \
-		--sample-interval $(or $(SAMPLE_INTERVAL),5)
+		--max-epochs $(or $(EPOCHS),1000) --sample-interval $(or $(SAMPLE_INTERVAL),5) \
+		$(if $(NUM_EMBEDDINGS),--num-embeddings $(NUM_EMBEDDINGS),) \
+		$(if $(FEATURE_MAP_SIZE),--feature-map-size $(FEATURE_MAP_SIZE),) \
+		$(if $(RECON_LOSS),--recon-loss $(RECON_LOSS),)
 
 train-pixelcnn:
 	$(PYTHON) scripts/train.py --model-type pixelcnn --seed $(or $(SEED),42) \
-		--vqvae-seed $(or $(VQVAE_SEED),42) --max-epochs $(or $(EPOCHS),80) \
-		--sample-interval $(or $(SAMPLE_INTERVAL),10)
+		--max-epochs $(or $(EPOCHS),80) --sample-interval $(or $(SAMPLE_INTERVAL),10) \
+		$(if $(NUM_EMBEDDINGS),--num-embeddings $(NUM_EMBEDDINGS),) \
+		$(if $(FEATURE_MAP_SIZE),--feature-map-size $(FEATURE_MAP_SIZE),) \
+		$(if $(RECON_LOSS),--recon-loss $(RECON_LOSS),)
 
-compare-priors:
-	$(PYTHON) scripts/compare_priors.py --n-samples $(or $(N),16) \
-		--pixelcnn-seed $(or $(PIXELCNN_SEED),42) --ldm-seed $(or $(LDM_SEED),42) \
-		--vqvae-seed $(or $(VQVAE_SEED),42)
+pixelcnn-experiment:
+	$(PYTHON) scripts/run_pixelcnn_experiment.py --max-epochs $(or $(EPOCHS),80) \
+		--n-samples $(or $(N),16) \
+		$(if $(SKIP_TRAIN),--skip-train,) $(if $(SKIP_COMPARE),--skip-compare,) \
+		$(if $(NUM_EMBEDDINGS),--num-embeddings $(NUM_EMBEDDINGS),) \
+		$(if $(FEATURE_MAP_SIZE),--feature-map-size $(FEATURE_MAP_SIZE),) \
+		$(if $(RECON_LOSS),--recon-loss $(RECON_LOSS),)
 
 # ─── Grid Sweeps (all configs × 3 seeds) ─────────────────────
 sweep-vae:
@@ -86,9 +94,11 @@ sweep-gan:
 sweep-dm:
 	$(PYTHON) scripts/run_sweep.py --family dm
 
-run-all: sweep-vae sweep-gan sweep-dm
+run-all: sweep-vae sweep-gan sweep-dm pixelcnn-experiment
 
 # ─── Evaluation ───────────────────────────────────────────────
+eval: eval-fid interpolate
+
 eval-fid:
 	$(PYTHON) scripts/evaluate.py
 

@@ -12,6 +12,8 @@ from gen_cats.config import (
     config_grid,
     config_grid_with_seeds,
     config_to_dict,
+    effective_vqvae_seed,
+    vqvae_slug_config,
 )
 from gen_cats.training.base_trainer import BaseTrainer
 from gen_cats.training.early_stopping import EarlyStopping
@@ -33,6 +35,17 @@ class TestTrainConfig:
         cfg = TrainConfig(batch_size=32, lr=1e-3)
         assert cfg.batch_size == 32
         assert cfg.lr == 1e-3
+
+    def test_effective_vqvae_seed_matches_run(self) -> None:
+        cfg = TrainConfig(model_type="pixelcnn", seed=123, vqvae_seed=None)
+        assert effective_vqvae_seed(cfg) == 123
+
+    def test_vqvae_slug_ignores_pixelcnn_fields(self) -> None:
+        a = vqvae_slug_config(
+            TrainConfig(model_type="pixelcnn", prior_n_layers=20, num_embeddings=512)
+        )
+        b = vqvae_slug_config(TrainConfig(model_type="vqvae", prior_n_layers=5, num_embeddings=512))
+        assert checkpoint_run_slug(a) == checkpoint_run_slug(b)
 
 
 class TestCheckpointRunSlug:

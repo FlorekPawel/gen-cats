@@ -1,6 +1,6 @@
 # Gen-Cats: Generative Models for Cat Image Synthesis
 
-Academic project comparing **VAE**, **GAN** and **diffusion** for generating 128×128 cat face images. Trained on Apple M4 (`mps` backend).
+Academic project comparing **VAE**, **GAN** and **diffusion** for generating 128×128 cat face images.
 
 Run `make help` for all targets.
 
@@ -29,7 +29,7 @@ scripts/                   # invoked by Makefile targets
 | GAN | SN-GAN | Adversarial + spectral norm | batch, LR, optional D augmentation |
 | DM | DDIM | Pixel-space diffusion | schedule ∈ {linear, cosine}, `base_channels` ∈ {32, 64} |
 | DM | Tiny LDM | Diffusion in **frozen VQ-VAE** latent space | Uses best VQ-VAE checkpoint; DDIM steps at inference |
-| Prior | **PixelCNN** | Autoregressive prior over VQ **code indices** | Lightweight baseline vs Tiny LDM (Milestone 7) |
+| Prior | **PixelCNN** | Autoregressive prior over VQ **code indices** | Lightweight baseline vs Tiny LDM |
 
 Grid sweeps run each config × **3 seeds**. Training uses early stopping (`patience=15`, `min_epochs=20`) with a high epoch cap (`max_epochs=1000`). Checkpoints are namespaced per run: `checkpoints/<model_type>/<slug>/best_seed{seed}.pt`.
 
@@ -48,41 +48,18 @@ For fair VQ-VAE generation comparisons, use **PixelCNN** or **Tiny LDM**, not th
 ## Quick Start
 
 ```bash
-make setup
-cp .env.example .env   # KAGGLE_USERNAME, KAGGLE_KEY
+make setup && cp .env.example .env   # KAGGLE_USERNAME, KAGGLE_KEY
 
-make download-data
-make process-data
+make download-data && make process-data
+make run-all                         # sweeps + pixelcnn-experiment
 
-# Single runs (MODEL / SEED / EPOCHS / VQVAE_SEED where applicable)
-make train-vae MODEL=beta_vae SEED=42
-make train-vae MODEL=vqvae SEED=42
-make train-gan MODEL=wgan_gp SEED=42
-make train-dm MODEL=ddim SEED=42
-make train-dm MODEL=tiny_ldm SEED=42 VQVAE_SEED=42
-
-make train-pixelcnn VQVAE_SEED=42 SEED=42 EPOCHS=80
-make compare-priors PIXELCNN_SEED=42 LDM_SEED=42 VQVAE_SEED=42
-
-make sweep-vae
-make sweep-gan
-make sweep-dm
-make run-all
-
-make eval-fid
-make interpolate
-make chimera
-make mlflow
+make eval                            # FID + interpolations (x3 seeds)
+make mlflow                          # http://127.0.0.1:5050
 ```
 
-### Dogs vs Cats (chimera experiment)
+Chimera: `make download-dogcat && make process-dogcat && make chimera`
 
-```bash
-make download-dogcat
-make process-dogcat
-make train-gan MODEL=sn_gan SEED=42
-make chimera
-```
+`make help` for individual targets.
 
 ## Installation
 

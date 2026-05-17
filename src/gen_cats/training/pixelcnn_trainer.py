@@ -28,12 +28,10 @@ class PixelCNNTrainer(BaseTrainer):
         self.config.early_stop_metric = "val_loss"
 
     def build_models(self) -> None:
-        vqvae_seed = self.config.vqvae_seed
         self.vqvae, self._vqvae_cfg, self._vqvae_ckpt = load_frozen_vqvae(
             self.config.checkpoint_dir,
             self.device,
-            seed=vqvae_seed,
-            run_name=self.config.vqvae_run_name,
+            self.config,
         )
         num_embeddings = self.vqvae.quantizer.num_embeddings
         self.pixelcnn = PixelCNN(

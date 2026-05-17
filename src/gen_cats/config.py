@@ -64,12 +64,30 @@ class TrainConfig:
     use_ema: bool = False
     ema_decay: float = 0.999
 
-    # PixelCNN prior
+    # PixelCNN prior (vqvae_seed None → same seed as run; slug from VQ-VAE fields below)
     prior_hidden_channels: int = 128
     prior_n_layers: int = 10
-    vqvae_seed: int = 42
+    vqvae_seed: int | None = None
     vqvae_run_name: str = ""
     sample_temperature: float = 1.0
+
+
+def vqvae_slug_config(cfg: TrainConfig) -> TrainConfig:
+    """TrainConfig fingerprint for ``checkpoints/vqvae/<slug>/`` lookup."""
+    return TrainConfig(
+        model_type="vqvae",
+        num_embeddings=cfg.num_embeddings,
+        embedding_dim=cfg.embedding_dim,
+        feature_map_size=cfg.feature_map_size,
+        commitment_cost=cfg.commitment_cost,
+        recon_loss=cfg.recon_loss,
+        run_name=cfg.vqvae_run_name,
+    )
+
+
+def effective_vqvae_seed(cfg: TrainConfig) -> int:
+    """Seed used to load ``best_seed{N}.pt`` for the frozen VQ-VAE."""
+    return cfg.seed if cfg.vqvae_seed is None else cfg.vqvae_seed
 
 
 def config_grid(base: TrainConfig, grid: dict[str, list[Any]]) -> list[TrainConfig]:

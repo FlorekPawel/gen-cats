@@ -1,17 +1,17 @@
-"""Compare PixelCNN vs Tiny LDM generation speed and save sample grids."""
+"""CLI: compare PixelCNN vs Tiny LDM generation speed and sample grids."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import logging
-import time
+from dataclasses import fields
 from pathlib import Path
 
-import torch
-from gen_cats.config import TrainConfig, checkpoint_run_slug
-from gen_cats.factory import create_trainer
-from torchvision.utils import make_grid, save_image
+from gen_cats.config import SEEDS, TrainConfig
+from gen_cats.evaluation.prior_comparison import (
+    compare_priors_all_seeds,
+    compare_priors_for_seed,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,69 +21,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _resolve_ckpt(
-    checkpoint_dir: Path,
-    model_type: str,
-    seed: int,
-    run_name: str = "",
-) -> Path:
-    slug = checkpoint_run_slug(TrainConfig(model_type=model_type, run_name=run_name))
-    path = checkpoint_dir / model_type / slug / f"best_seed{seed}.pt"
-    if path.exists():
-        return path
-    root = checkpoint_dir / model_type
-    candidates = sorted(
-        root.glob(f"**/best_seed{seed}.pt"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    if not candidates:
-        candidates = sorted(
-            root.glob("**/best_seed*.pt"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-    if not candidates:
-        msg = f"No {model_type} checkpoint under {root}/"
-        raise FileNotFoundError(msg)
-    return candidates[0]
-
-
-def _load_trainer(
-    model_type: str,
-    seed: int,
-    device: str,
-    checkpoint_dir: str,
-    vqvae_seed: int,
-    vqvae_run_name: str,
-) -> tuple[object, Path]:
-    cfg = TrainConfig(
-        model_type=model_type,
-        seed=seed,
-        device=device,
-        checkpoint_dir=checkpoint_dir,
-        vqvae_seed=vqvae_seed,
-        vqvae_run_name=vqvae_run_name,
-    )
-    trainer = create_trainer(cfg)
-    trainer.build_models()
-    trainer.build_optimizers()
-    ckpt_path = _resolve_ckpt(Path(checkpoint_dir), model_type, seed)
-    if not trainer.load_checkpoint("best"):
-        trainer.load_checkpoint("latest")
-    return trainer, ckpt_path
-
-
-def _timed_samples(trainer: object, n: int) -> tuple[torch.Tensor, float]:
-    if torch.backends.mps.is_available():
-        torch.mps.synchronize()
-    start = time.perf_counter()
-    with torch.no_grad():
-        samples = trainer.generate_samples(n)  # type: ignore[attr-defined]
-    if torch.backends.mps.is_available():
-        torch.mps.synchronize()
-    elapsed = time.perf_counter() - start
-    return samples, elapsed
+def _prior_cfg_from_args(args: argparse.Namespace) -> TrainConfig:
+    """Build config; VQ-VAE fields match ``make sweep-vae`` / ``make train-vae MODEL=vqvae``."""
+    overrides: dict[str, object] = {
+        "device": args.device,
+        "checkpoint_dir": args.checkpoint_dir,
+        "n_sample_images": args.n_samples,
+        "vqvae_run_name": args.vqvae_run_name,
+    }
+    if args.num_embeddings is not None:
+        overrides["num_embeddings"] = args.num_embeddings
+    if args.feature_map_size is not None:
+        overrides["feature_map_size"] = args.feature_map_size
+    if args.recon_loss is not None:
+        overrides["recon_loss"] = args.recon_loss
+    base = {f.name: getattr(TrainConfig(), f.name) for f in fields(TrainConfig)}
+    base.update(overrides)
+    return TrainConfig(**base)
 
 
 def parse_args() -> argparse.Namespace:
@@ -92,69 +46,39 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="mps")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints")
     parser.add_argument("--output-dir", type=str, default="results/prior_comparison")
-    parser.add_argument("--pixelcnn-seed", type=int, default=42)
-    parser.add_argument("--ldm-seed", type=int, default=42)
-    parser.add_argument("--vqvae-seed", type=int, default=42)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Single-seed mode (ignored with --all-seeds)",
+    )
     parser.add_argument("--vqvae-run-name", type=str, default="")
+    parser.add_argument("--num-embeddings", type=int, default=None)
+    parser.add_argument("--feature-map-size", type=int, default=None)
+    parser.add_argument("--recon-loss", type=str, default=None, choices=["l1", "mse"])
+    parser.add_argument(
+        "--all-seeds",
+        action="store_true",
+        help=f"Compare all project seeds {SEEDS}",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    prior_cfg = _prior_cfg_from_args(args)
     out_dir = Path(args.output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Loading PixelCNN prior (seed=%d)", args.pixelcnn_seed)
-    pixel_trainer, pixel_ckpt = _load_trainer(
-        "pixelcnn",
-        args.pixelcnn_seed,
-        args.device,
-        args.checkpoint_dir,
-        args.vqvae_seed,
-        args.vqvae_run_name,
-    )
-    logger.info("Loading Tiny LDM (seed=%d)", args.ldm_seed)
-    ldm_trainer, ldm_ckpt = _load_trainer(
-        "tiny_ldm",
-        args.ldm_seed,
-        args.device,
-        args.checkpoint_dir,
-        args.vqvae_seed,
-        args.vqvae_run_name,
-    )
+    if args.all_seeds:
+        compare_priors_all_seeds(SEEDS, prior_cfg, out_dir)
+        logger.info("Saved per-seed grids under %s/seed_*", out_dir)
+        return
 
-    n = args.n_samples
-    pixel_samples, pixel_sec = _timed_samples(pixel_trainer, n)
-    ldm_samples, ldm_sec = _timed_samples(ldm_trainer, n)
-
-    nrow = 4
-    for name, samples in [("pixelcnn", pixel_samples), ("tiny_ldm", ldm_samples)]:
-        grid = make_grid(samples, nrow=nrow, normalize=True, value_range=(-1, 1))
-        save_image(grid, out_dir / f"{name}_samples.png")
-
-    combined = torch.cat([pixel_samples, ldm_samples], dim=0)
-    combined_grid = make_grid(combined, nrow=nrow, normalize=True, value_range=(-1, 1))
-    save_image(combined_grid, out_dir / "combined_comparison.png")
-
-    summary = {
-        "n_samples": n,
-        "pixelcnn_checkpoint": str(pixel_ckpt),
-        "tiny_ldm_checkpoint": str(ldm_ckpt),
-        "pixelcnn_seconds": pixel_sec,
-        "tiny_ldm_seconds": ldm_sec,
-        "pixelcnn_seconds_per_image": pixel_sec / n,
-        "tiny_ldm_seconds_per_image": ldm_sec / n,
-        "speedup_ldm_over_pixelcnn": pixel_sec / max(ldm_sec, 1e-9),
-    }
-    summary_path = out_dir / "comparison.json"
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-
-    logger.info(
-        "PixelCNN: %.2fs (%.3fs/img) | Tiny LDM: %.2fs (%.3fs/img)",
-        pixel_sec,
-        summary["pixelcnn_seconds_per_image"],
-        ldm_sec,
-        summary["tiny_ldm_seconds_per_image"],
+    compare_priors_for_seed(
+        prior_cfg=prior_cfg,
+        seed=args.seed,
+        n_samples=args.n_samples,
+        output_dir=out_dir,
     )
     logger.info("Saved grids and metrics to %s", out_dir)
 
