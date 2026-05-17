@@ -27,7 +27,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run grid sweep for model family")
     parser.add_argument("--family", choices=["vae", "gan", "dm"], required=True)
     parser.add_argument("--data-dir", type=str, default="data/processed")
-    parser.add_argument("--max-epochs", type=int, default=100)
     args = parser.parse_args()
 
     model_types = FAMILY_MODELS[args.family]
@@ -41,7 +40,6 @@ def main() -> None:
         base = TrainConfig(
             model_type=model_type,
             data_dir=args.data_dir,
-            max_epochs=args.max_epochs,
         )
 
         runner = ExperimentRunner(

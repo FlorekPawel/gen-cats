@@ -32,7 +32,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="PixelCNN baseline: train 3 seeds + compare vs Tiny LDM",
     )
-    parser.add_argument("--max-epochs", type=int, default=80)
     parser.add_argument("--data-dir", type=str, default="data/processed")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints")
     parser.add_argument("--output-dir", type=str, default="results/prior_comparison")
@@ -55,7 +54,6 @@ def _prior_base_config(args: argparse.Namespace) -> TrainConfig:
         data_dir=args.data_dir,
         checkpoint_dir=args.checkpoint_dir,
         device=args.device,
-        max_epochs=args.max_epochs,
         vqvae_run_name=args.vqvae_run_name,
         sample_interval=10,
         n_sample_images=args.n_samples,
