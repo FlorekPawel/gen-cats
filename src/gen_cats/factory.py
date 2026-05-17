@@ -53,6 +53,7 @@ def create_trainer(config: TrainConfig) -> BaseTrainer:
     """Factory: config.model_type → appropriate Trainer subclass."""
     from gen_cats.training.dm_trainer import DiffusionTrainer
     from gen_cats.training.gan_trainer import GANTrainer
+    from gen_cats.training.pixelcnn_trainer import PixelCNNTrainer
     from gen_cats.training.vae_trainer import VAETrainer
 
     registry: dict[str, type[BaseTrainer]] = {
@@ -62,6 +63,7 @@ def create_trainer(config: TrainConfig) -> BaseTrainer:
         "sn_gan": GANTrainer,
         "ddim": DiffusionTrainer,
         "tiny_ldm": DiffusionTrainer,
+        "pixelcnn": PixelCNNTrainer,
     }
 
     cls = registry.get(config.model_type)

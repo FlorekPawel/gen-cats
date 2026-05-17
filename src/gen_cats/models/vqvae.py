@@ -172,6 +172,22 @@ class VQVAE(nn.Module):
         z_q, _, _ = self.quantizer(z_e)
         return z_q
 
+    @torch.no_grad()
+    def encode_indices(self, x: torch.Tensor) -> torch.Tensor:
+        """Encode images to discrete code indices (B, H, W)."""
+        z_e = self.encoder(x)
+        _, _, indices = self.quantizer(z_e)
+        h = self.feature_map_size
+        return indices.view(x.size(0), h, h)
+
+    def decode_indices(self, indices: torch.Tensor) -> torch.Tensor:
+        """Decode index maps (B, H, W) to images."""
+        flat = indices.reshape(indices.size(0), -1)
+        z_q = self.quantizer.embedding(flat)
+        h = self.feature_map_size
+        z_q = z_q.view(indices.size(0), h, h, -1).permute(0, 3, 1, 2).contiguous()
+        return self.decoder(z_q)
+
     def decode(self, z_q: torch.Tensor) -> torch.Tensor:
         return self.decoder(z_q)
 

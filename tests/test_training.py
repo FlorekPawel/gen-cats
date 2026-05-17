@@ -22,11 +22,12 @@ from torch.utils.data import DataLoader, TensorDataset
 class TestTrainConfig:
     def test_defaults(self) -> None:
         cfg = TrainConfig()
-        assert cfg.max_epochs == 100
+        assert cfg.max_epochs == 1000
         assert cfg.patience == 15
         assert cfg.device == "mps"
-        assert cfg.sample_interval == 10
-        assert cfg.min_epochs == 50
+        assert cfg.sample_interval == 5
+        assert cfg.min_epochs == 20
+        assert cfg.prior_n_layers == 10
 
     def test_override(self) -> None:
         cfg = TrainConfig(batch_size=32, lr=1e-3)

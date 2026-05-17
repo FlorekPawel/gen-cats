@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import logging
-from pathlib import Path
 from typing import Any
 
 import torch
@@ -62,42 +61,17 @@ class DiffusionTrainer(BaseTrainer):
 
     def _load_frozen_vqvae(self) -> None:
         """Load best VQ-VAE checkpoint and freeze."""
-        from gen_cats.models.vqvae import VQVAE
+        from gen_cats.models.vqvae_checkpoint import load_frozen_vqvae
 
-        root = Path(self.config.checkpoint_dir) / "vqvae"
-        seed = self.config.seed
-
-        def mtime_key(path: Path) -> float:
-            return path.stat().st_mtime
-
-        candidates = sorted(
-            root.glob(f"**/best_seed{seed}.pt"),
-            key=mtime_key,
-            reverse=True,
+        vqvae_seed = getattr(self.config, "vqvae_seed", self.config.seed)
+        run_name = getattr(self.config, "vqvae_run_name", "")
+        self.vqvae, _, self._vqvae_ckpt = load_frozen_vqvae(
+            self.config.checkpoint_dir,
+            self.device,
+            seed=vqvae_seed,
+            run_name=run_name,
         )
-        if not candidates:
-            candidates = sorted(
-                root.glob("**/best_seed*.pt"),
-                key=mtime_key,
-                reverse=True,
-            )
-        if not candidates:
-            msg = f"No VQ-VAE checkpoint found under {root}/"
-            raise FileNotFoundError(msg)
-        ckpt_path = candidates[0]
-        logger.info("Using VQ-VAE checkpoint: %s", ckpt_path)
-
-        ckpt = torch.load(ckpt_path, map_location=self.device, weights_only=False)
-        vqvae_cfg = ckpt.get("config", {})
-
-        self.vqvae = VQVAE(
-            num_embeddings=vqvae_cfg.get("num_embeddings", 512),
-            embedding_dim=vqvae_cfg.get("embedding_dim", 64),
-            feature_map_size=vqvae_cfg.get("feature_map_size", 16),
-        ).to(self.device)
-        self.vqvae.load_state_dict(ckpt["model"])
-        self.vqvae.eval()
-        self.vqvae.requires_grad_(False)
+        logger.info("Using VQ-VAE checkpoint: %s", self._vqvae_ckpt)
 
     def _update_ema(self) -> None:
         if self.ema_unet is None:

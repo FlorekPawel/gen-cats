@@ -2,7 +2,7 @@ PYTHON := uv run python
 MLFLOW_PORT := 5050
 
 .PHONY: help setup download-data download-dogcat process-data process-dogcat \
-        train-vae train-gan train-dm \
+        train-vae train-gan train-dm train-pixelcnn compare-priors \
         sweep-vae sweep-gan sweep-dm run-all \
         eval-fid interpolate chimera \
         mlflow test lint format pre-commit pre-commit-all clean
@@ -17,6 +17,8 @@ help:
 	@echo "  make train-vae        - train VAE model (MODEL=beta_vae|vqvae)"
 	@echo "  make train-gan        - train GAN model (MODEL=wgan_gp|sn_gan)"
 	@echo "  make train-dm         - train diffusion model (MODEL=ddim|tiny_ldm)"
+	@echo "  make train-pixelcnn   - train PixelCNN prior on frozen VQ-VAE codes"
+	@echo "  make compare-priors   - 16-sample grid: PixelCNN vs Tiny LDM + timings"
 	@echo "  make sweep-vae        - run VAE grid sweep"
 	@echo "  make sweep-gan        - run GAN grid sweep"
 	@echo "  make sweep-dm         - run diffusion grid sweep"
@@ -52,13 +54,27 @@ process-dogcat:
 
 # ─── Training (single model) ─────────────────────────────────
 train-vae:
-	$(PYTHON) scripts/train.py --config configs/model/$(or $(MODEL),beta_vae).yaml
+	$(PYTHON) scripts/train.py --model-type $(or $(MODEL),beta_vae) --seed $(or $(SEED),42) \
+		--max-epochs $(or $(EPOCHS),1000) --sample-interval $(or $(SAMPLE_INTERVAL),5)
 
 train-gan:
-	$(PYTHON) scripts/train.py --config configs/model/$(or $(MODEL),wgan_gp).yaml
+	$(PYTHON) scripts/train.py --model-type $(or $(MODEL),wgan_gp) --seed $(or $(SEED),42) \
+		--max-epochs $(or $(EPOCHS),1000) --sample-interval $(or $(SAMPLE_INTERVAL),5)
 
 train-dm:
-	$(PYTHON) scripts/train.py --config configs/model/$(or $(MODEL),ddim).yaml
+	$(PYTHON) scripts/train.py --model-type $(or $(MODEL),ddim) --seed $(or $(SEED),42) \
+		--vqvae-seed $(or $(VQVAE_SEED),42) --max-epochs $(or $(EPOCHS),1000) \
+		--sample-interval $(or $(SAMPLE_INTERVAL),5)
+
+train-pixelcnn:
+	$(PYTHON) scripts/train.py --model-type pixelcnn --seed $(or $(SEED),42) \
+		--vqvae-seed $(or $(VQVAE_SEED),42) --max-epochs $(or $(EPOCHS),80) \
+		--sample-interval $(or $(SAMPLE_INTERVAL),10)
+
+compare-priors:
+	$(PYTHON) scripts/compare_priors.py --n-samples $(or $(N),16) \
+		--pixelcnn-seed $(or $(PIXELCNN_SEED),42) --ldm-seed $(or $(LDM_SEED),42) \
+		--vqvae-seed $(or $(VQVAE_SEED),42)
 
 # ─── Grid Sweeps (all configs × 3 seeds) ─────────────────────
 sweep-vae:

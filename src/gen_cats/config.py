@@ -64,6 +64,13 @@ class TrainConfig:
     use_ema: bool = False
     ema_decay: float = 0.999
 
+    # PixelCNN prior
+    prior_hidden_channels: int = 128
+    prior_n_layers: int = 10
+    vqvae_seed: int = 42
+    vqvae_run_name: str = ""
+    sample_temperature: float = 1.0
+
 
 def config_grid(base: TrainConfig, grid: dict[str, list[Any]]) -> list[TrainConfig]:
     """Expand base config over a parameter grid → list of configs.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -11,10 +12,12 @@ from gen_cats.models.beta_vae import BetaVAE
 from gen_cats.models.ddim import DDIMScheduler, cosine_beta_schedule, linear_beta_schedule
 from gen_cats.models.discriminator import Discriminator, compute_gradient_penalty
 from gen_cats.models.generator import Generator
+from gen_cats.models.pixelcnn import PixelCNN
 from gen_cats.models.unet import UNet
 from gen_cats.models.vqvae import VQVAE
 from gen_cats.training.dm_trainer import DiffusionTrainer
 from gen_cats.training.gan_trainer import GANTrainer
+from gen_cats.training.pixelcnn_trainer import PixelCNNTrainer
 from gen_cats.training.vae_trainer import VAETrainer
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -98,6 +101,28 @@ class TestVQVAE:
         assert "total" in losses
         assert "recon" in losses
         assert "vq" in losses
+
+    def test_encode_decode_indices(self) -> None:
+        model = VQVAE(num_embeddings=64, embedding_dim=32, feature_map_size=8)
+        x = torch.randn(B, 3, 128, 128)
+        indices = model.encode_indices(x)
+        assert indices.shape == (B, 8, 8)
+        recon = model.decode_indices(indices)
+        assert recon.shape == (B, 3, 128, 128)
+
+
+class TestPixelCNN:
+    def test_forward_shape(self) -> None:
+        k, h = 64, 8
+        model = PixelCNN(num_embeddings=k, hidden_channels=32, n_layers=2)
+        indices = torch.randint(0, k, (B, h, h))
+        logits = model(indices)
+        assert logits.shape == (B, k, h, h)
+
+    def test_sample_shape(self) -> None:
+        model = PixelCNN(num_embeddings=32, hidden_channels=16, n_layers=2)
+        out = model.sample(3, spatial_size=4, device=torch.device(DEVICE))
+        assert out.shape == (3, 4, 4)
 
 
 class TestVAETrainer:
@@ -344,3 +369,47 @@ class TestDiffusionTrainer:
         train_loader, val_loader = _dummy_loaders()
         results = trainer.fit(train_loader, val_loader)
         assert results["final_epoch"] == 1
+
+
+class TestPixelCNNTrainer:
+    @patch("gen_cats.training.pixelcnn_trainer.load_frozen_vqvae")
+    @patch("gen_cats.training.base_trainer.mlflow")
+    def test_pixelcnn_train(self, _mock_mlflow: Any, mock_vqvae: Any, tmp_path: Any) -> None:
+        vqvae = VQVAE(num_embeddings=64, embedding_dim=32, feature_map_size=8)
+        mock_vqvae.return_value = (
+            vqvae,
+            {"num_embeddings": 64, "feature_map_size": 8},
+            Path("fake.pt"),
+        )
+        cfg = TrainConfig(
+            model_type="pixelcnn",
+            device=DEVICE,
+            max_epochs=2,
+            prior_hidden_channels=32,
+            prior_n_layers=2,
+            batch_size=B,
+            checkpoint_dir=str(tmp_path),
+            patience=50,
+            sample_interval=100,
+            min_epochs=0,
+        )
+        trainer = PixelCNNTrainer(cfg)
+        train_loader, val_loader = _dummy_loaders()
+        results = trainer.fit(train_loader, val_loader)
+        assert results["final_epoch"] == 2
+
+    @patch("gen_cats.training.pixelcnn_trainer.load_frozen_vqvae")
+    def test_pixelcnn_generate(self, mock_vqvae: Any, tmp_path: Any) -> None:
+        vqvae = VQVAE(num_embeddings=64, embedding_dim=32, feature_map_size=8)
+        mock_vqvae.return_value = (vqvae, {}, Path("fake.pt"))
+        cfg = TrainConfig(
+            model_type="pixelcnn",
+            device=DEVICE,
+            prior_hidden_channels=32,
+            prior_n_layers=2,
+            checkpoint_dir=str(tmp_path),
+        )
+        trainer = PixelCNNTrainer(cfg)
+        trainer.build_models()
+        samples = trainer.generate_samples(2)
+        assert samples.shape == (2, 3, 128, 128)
