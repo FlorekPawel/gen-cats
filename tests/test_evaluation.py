@@ -43,6 +43,30 @@ class TestSaveGrid:
         assert path.suffix == ".png"
 
 
+class TestFIDBenchmark:
+    def test_model_types_include_priors(self) -> None:
+        from gen_cats.evaluation.fid_benchmark import MODEL_TYPES
+
+        assert "pixelcnn" in MODEL_TYPES
+        assert "tiny_ldm" in MODEL_TYPES
+
+    def test_build_eval_config_vqvae_fields(self) -> None:
+        from gen_cats.evaluation.fid_benchmark import build_eval_config
+
+        cfg = build_eval_config(
+            "tiny_ldm",
+            42,
+            device="cpu",
+            data_dir="data/processed",
+            checkpoint_dir="checkpoints",
+            vqvae_overrides={"num_embeddings": 1024, "feature_map_size": 8},
+        )
+        assert cfg.model_type == "tiny_ldm"
+        assert cfg.num_embeddings == 1024
+        assert cfg.feature_map_size == 8
+        assert cfg.vqvae_seed is None
+
+
 class TestFIDCompute:
     def test_fid_zero_identical(self) -> None:
         from gen_cats.evaluation.fid import compute_fid

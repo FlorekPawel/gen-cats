@@ -24,7 +24,7 @@ help:
 	@echo "  make sweep-dm         - run diffusion grid sweep"
 	@echo "  make run-all          - all sweeps + pixelcnn-experiment"
 	@echo "  make eval             - FID + interpolations (x3 seeds each)"
-	@echo "  make eval-fid         - FID only"
+	@echo "  make eval-fid         - FID for all 7 model families (x3 seeds)"
 	@echo "  make interpolate      - interpolation strips only"
 	@echo "  make chimera          - dog+cat chimera only (needs process-dogcat)"
 	@echo "  make mlflow           - start local MLflow UI"
@@ -100,7 +100,10 @@ run-all: sweep-vae sweep-gan sweep-dm pixelcnn-experiment
 eval: eval-fid interpolate
 
 eval-fid:
-	$(PYTHON) scripts/evaluate.py
+	$(PYTHON) scripts/evaluate.py \
+		$(if $(NUM_EMBEDDINGS),--num-embeddings $(NUM_EMBEDDINGS),) \
+		$(if $(FEATURE_MAP_SIZE),--feature-map-size $(FEATURE_MAP_SIZE),) \
+		$(if $(RECON_LOSS),--recon-loss $(RECON_LOSS),)
 
 interpolate:
 	$(PYTHON) scripts/interpolate.py

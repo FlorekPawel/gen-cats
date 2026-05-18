@@ -15,14 +15,14 @@
 
 \email{\{pawel.pozorski, pawel.florek\}.stud@pw.edu.pl}
 
-\keywords{generative models, variational autoencoders, generative adversarial networks, diffusion models, image synthesis, cat generation, FID, hyperparameter optimization, mode collapse}
+\keywords{generative models, variational autoencoders, generative adversarial networks, diffusion models, PixelCNN, latent diffusion, image synthesis, cat generation, FID, hyperparameter optimization, mode collapse}
 
 \begin{document}
 
 \maketitle
 
 \begin{abstract}
-This paper presents a comparative study of three major generative modeling paradigms -- Variational Autoencoders (VAE), Generative Adversarial Networks (GAN), and Diffusion Models -- applied to the synthesis of cat face images. We evaluate multiple architectures within each family: $\beta$-VAE and VQ-VAE-1 (VAE family), WGAN-GP and SN-GAN (GAN family), and DDIM with a Latent Diffusion Model (diffusion family). The study employs structured grid search over key hyperparameters, training with three fixed random seeds to ensure reproducibility. We evaluate models quantitatively using Fréchet Inception Distance (FID) and qualitatively through specific latent space interpolations and mode collapse analysis. Furthermore, we conduct an exploratory extension training our best model on a mixed dataset of dogs and cats to observe distribution averaging phenomena. This work provides a practical framework for comparing generative paradigms.
+This report presents a comparative study of three major generative modeling paradigms---Variational Autoencoders (VAE), Generative Adversarial Networks (GAN), and Diffusion Models---applied to the synthesis of $128 \times 128$ cat face images. We evaluate $\beta$-VAE and VQ-VAE-1 (VAE family), WGAN-GP and SN-GAN (GAN family), DDIM and a Tiny Latent Diffusion Model (diffusion family), and add a classical PixelCNN autoregressive prior over VQ-VAE code indices as a baseline for latent generative modeling. The study employs structured grid search over key hyperparameters. We evaluate models using Fréchet Inception Distance (FID), latent interpolations, and a qualitative comparison of PixelCNN versus Tiny LDM (sample quality and wall-clock generation time). Furthermore, we conduct an exploratory extension training of SN-GAN on mixed dogs-and-cats data to observe distribution averaging phenomena. This work provides a practical framework for comparing generative paradigms.
 \end{abstract}
 
 \section{Introduction}
@@ -43,7 +43,7 @@ The primary dataset consists of over 9,000 cat images sourced from the Kaggle Ca
     \item \textbf{Annotation Parsing}: Instead of relying on pre-trained face detectors, we extract the exact 9 coordinate points (eyes, mouth, ears) provided in the corresponding \texttt{.cat} annotation files.
     \item \textbf{Face Cropping}: Bounding boxes are dynamically calculated based on the extreme coordinates of the facial landmarks with an added spatial margin to capture the full face.
     \item \textbf{Resizing}: Cropped regions are standardized to $128 \times 128$ pixels using bilinear interpolation, drastically reducing VRAM footprint and training time.
-    \item \textbf{Normalization}: Pixel values are normalized to the $[0, 1]$ range for VAE/Diffusion models, and to $[-1, 1]$ for GAN models.
+    \item \textbf{Normalization}: All cat-face training tensors are mapped to $[-1, 1]$ via \texttt{ToTensor} and per-channel normalization with mean $0.5$ and std $0.5$, matching $\tanh$ output heads on VAE decoders, GAN generators, and diffusion pipelines.
 \end{enumerate}
 
 Comparison of raw vs. processed images is shown in Figure~\ref{fig:preprocessing_comparison}.
@@ -88,13 +88,21 @@ Diffusion models define a forward process that corrupts images to noise, then le
 
 \textbf{DDIM:} A faster sampling approach for diffusion models \cite{DBLP:journals/corr/abs-2010-02502} that uses a deterministic sampling procedure, enabling inference in fewer steps. Grid search varies: noise schedule $\in \{\text{linear}, \text{cosine}\}$, base channels $\in \{32, 64\}$.
 
-\textbf{Latent Diffusion Model (LDM):} Following the methodology introduced by Rombach et al. \cite{Rombach_2022_CVPR}, we implement a lightweight diffusion model operating in the latent space of a frozen VQ-VAE encoder. This approach drastically reduces computational overhead while preserving generation quality. Grid search varies sampling steps $\in \{50, 100, 200\}$.
+\textbf{Tiny Latent Diffusion Model (LDM):} Following Rombach et al. \cite{Rombach_2022_CVPR}, we train a lightweight U-Net diffusion model in the \emph{frozen} latent space of the best VQ-VAE-1 from the grid search. The VQ encoder/decoder weights are not updated during LDM training; only the U-Net is optimized. At inference, DDIM sampling produces a latent tensor that is passed through the frozen decoder. Grid search varies DDIM steps $\in \{50, 100, 200\}$ at inference (no retraining per step count).
+
+\subsubsection{PixelCNN Prior over VQ Codes (Baseline)}
+
+VQ-VAE-1 alone defines $p(x|z)$ via the decoder but not a prior $p(z)$ over discrete code indices. For unconditional synthesis we therefore compare two learned priors on the same frozen VQ-VAE:
+
+\textbf{PixelCNN \cite{oord2016pixel}:} A lightweight autoregressive model with masked convolutions predicts codebook indices on the $16 \times 16$ or $8 \times 8$ latent grid (depending on the VQ-VAE configuration).
+
+\textbf{Comparison protocol:} After training, we generate $4 \times 4$ grids ($16$ images) per seed for both PixelCNN and Tiny LDM, decode through the \emph{same} VQ-VAE, and log wall-clock time on Apple M4 (\texttt{mps}). This isolates prior quality and inference cost while holding the decoder fixed.
 
 \subsection{Training Setup and Hyperparameter Grid}
 
-All models employ the Adam optimizer with a default learning rate of $\text{lr} = 2 \times 10^{-4}$ and momentum parameters $(\beta_1, \beta_2) = (0.5, 0.999)$ for stable convergence. Training proceeds for up to 100 epochs with early stopping (patience=15 epochs without improvement on validation loss), enforcing a minimum delta of $10^{-4}$ for metric improvements. Validation is performed after each epoch using the held-out validation set (10\% of the processed cat dataset), and the best model checkpoint is automatically restored after training concludes.
+All models employ the Adam optimizer with $\text{lr} = 2 \times 10^{-4}$ and $(\beta_1, \beta_2) = (0.5, 0.999)$. Training uses a high epoch cap ($1000$) with early stopping (patience $= 15$, $\text{min\_epochs} = 20$, $\text{min\_delta} = 10^{-4}$). $\beta$-VAE and VQ-VAE early stopping monitor \textbf{reconstruction loss} rather than total loss (which includes KL or VQ terms that can plateau early).
 
-Each hyperparameter configuration is trained independently across three fixed random seeds $\{42, 123, 7\}$ to assess stability and variance across initialization points. Seed management is enforced globally via PyTorch, NumPy, and Python's built-in random module before each training run, ensuring deterministic behavior on the target hardware. Results are subsequently averaged across seeds for robustness assessment.
+Each hyperparameter configuration is trained independently across three fixed random seeds $\{42, 0, 3407\}$. Seeds are reset in PyTorch, NumPy, and Python before every run. Grid-sweep results are compared per cell; evaluation metrics are aggregated over the same seed list for reproducibility.
 
 
 \begin{table}[H]
@@ -112,7 +120,8 @@ Each hyperparameter configuration is trained independently across three fixed ra
         WGAN-GP & n\_critic, batch, LR & $\{3, 5\} \times \{64, 128\} \times \{sym, TTUR\}$ \\
         SN-GAN & batch, LR, augment & $\{64, 128\} \times \{sym, TTUR\} \times \{no, hflip\}$ \\
         DDIM & schedule, channels & $\{linear, cosine\} \times \{32, 64\}$ \\
-        Latent Diffusion Model (LDM) & steps (inference) & $\{50, 100, 200\}$ \\
+        Tiny LDM & steps (inference) & $\{50, 100, 200\}$ \\
+        PixelCNN prior & hidden width, depth & $128$ channels, $10$ masked layers \\
         \hline
     \end{tabular}%
     }
@@ -121,10 +130,14 @@ Each hyperparameter configuration is trained independently across three fixed ra
 \subsection{Evaluation Metrics}
 
 \subsubsection{Fréchet Inception Distance (FID)}
-FID measures the distance between generated and real image distributions in the feature space of a pre-trained InceptionV3 network. We compute FID on the validation set, averaging results across the 3 seeds for the best configurations.
+FID compares the distribution of real validation images to unconditionally generated samples in the feature space of a pretrained Inception network. Lower FID indicates better alignment with the data distribution. We use each model's native sampling procedure (e.g., $z \sim \mathcal{N}(0,I)$ for $\beta$-VAE and GANs, DDIM for pixel diffusion, random codes for VQ-VAE when no separate prior is evaluated). Generated tensors are mapped from $[-1,1]$ to $[0,1]$ before feature extraction, consistent with training normalization.
+
+We report FID on the held-out validation set for every trained family: $\beta$-VAE, VQ-VAE-1, PixelCNN, Tiny LDM, WGAN-GP, SN-GAN, and DDIM, using a fixed sample count ($N{=}1000$) per run. After selecting a hyperparameter configuration from the sweep (shared VQ settings for VQ-VAE, PixelCNN, and Tiny LDM), we compute FID independently for each seed and summarize mean $\pm$ standard deviation. PixelCNN and Tiny LDM use their learned priors with the same frozen decoder; VQ-VAE FID uses the trainer's random-code debug sampler and is reported only as a weak baseline, not comparable to the learned priors.
 
 \subsubsection{Latent Interpolation Analysis}
-To evaluate the smoothness of the learned latent spaces, we execute a strict interpolation protocol: we select two generated images and their corresponding latent noise matrices ($z_1$ and $z_2$). We interpolate linearly between these two matrices to generate 8 additional intermediate latent matrices. These 8 matrices are passed through the generator, resulting in a continuous grid of 10 images, which are assessed for semantic continuity.
+For models with a continuous latent vector $z \in \mathbb{R}^d$, we test whether the learned representation is semantically smooth. We sample two endpoints $z_1, z_2 \sim \mathcal{N}(0,I)$ from the prior used at generation time, form eight uniformly spaced convex combinations
+$z_\alpha = (1-\alpha) z_1 + \alpha z_2$, $\alpha \in \{0, \tfrac{1}{9}, \ldots, 1\}$,
+and decode each $z_\alpha$ to an image, yielding a strip of ten frames. Continuity of appearance along the strip is judged qualitatively. This protocol is applied to $\beta$-VAE and WGAN-GP, which admit Gaussian latent walks; it is not used for discrete VQ codes or diffusion latents without an explicit interpolation definition.
 
 \subsubsection{Exploratory Extension: Mixed Distributions}
 We train Spectral Normalization GAN (SN-GAN) on a mixed dataset containing both cats and dogs, utilizing a preprocessed dataset of $\sim 25,000$ combined images. The goal is to observe whether the unconditional model learns to separate the classes into mode-specific outputs or suffers from distribution averaging, resulting in generating "chimeras" (e.g., cat faces with dog ears or dog faces with feline features). This experiment probes the limits of unconditional generation under multi-modal input distributions. SN-GAN was deliberately chosen for this task. Diffusion models were too computationally expensive for the $\sim 25,000$ image dataset, and VAEs were rejected because their tendency to blur reconstructions would obscure the distribution averaging effect. SN-GAN provides the sharp, detailed outputs necessary to clearly observe cross-class features in the generated samples.

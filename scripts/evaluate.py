@@ -1,4 +1,4 @@
-"""Compute FID for best models across 3 seeds."""
+"""CLI: compute FID for all trained model families."""
 
 from __future__ import annotations
 
@@ -7,83 +7,28 @@ import json
 import logging
 from pathlib import Path
 
-import torch
-from gen_cats.config import SEEDS, TrainConfig
-from gen_cats.evaluation.fid import compute_fid_from_loaders
-from gen_cats.factory import create_dataloaders, create_trainer
+from gen_cats.config import SEEDS
+from gen_cats.evaluation.fid_benchmark import MODEL_TYPES, VQVAE_GRID_FIELDS, evaluate_all
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-MODEL_TYPES = ["beta_vae", "vqvae", "wgan_gp", "sn_gan", "ddim"]
 
-
-def evaluate_model(
-    model_type: str,
-    args: argparse.Namespace,
-    seeds: list[int],
-) -> dict[str, float | str | dict[str, float]]:
-    """Compute FID for a model type across the given seeds."""
-    per_seed: dict[str, float] = {}
-
-    for seed in seeds:
-        cfg = TrainConfig(
-            model_type=model_type,
-            seed=seed,
-            device=args.device,
-            data_dir=args.data_dir,
-            checkpoint_dir=args.checkpoint_dir,
-            run_name=args.run_name,
-        )
-
-        try:
-            trainer = create_trainer(cfg)
-            trainer.build_models()
-            trainer.build_optimizers()
-
-            if not trainer.load_checkpoint("best"):
-                logger.warning("No best checkpoint for %s seed=%d, skipping", model_type, seed)
-                continue
-
-            _train_loader, val_loader = create_dataloaders(cfg)
-
-            def gen_fn(n: int, _t: object = trainer) -> torch.Tensor:
-                return _t.generate_samples(n).cpu()
-
-            fid = compute_fid_from_loaders(
-                val_loader, gen_fn, n_samples=args.n_samples, device=torch.device(cfg.device)
-            )
-            per_seed[str(seed)] = fid
-            logger.info("FID %s seed=%d: %.2f", model_type, seed, fid)
-
-        except Exception:
-            logger.exception("Failed to evaluate %s seed=%d", model_type, seed)
-
-    if not per_seed:
-        return {"model": model_type, "mean_fid": float("nan"), "std_fid": float("nan")}
-
-    import numpy as np
-
-    fid_scores = list(per_seed.values())
+def _vqvae_overrides(args: argparse.Namespace) -> dict[str, object]:
     return {
-        "model": model_type,
-        "seeds": list(per_seed.keys()),
-        "per_seed": per_seed,
-        "mean_fid": float(np.mean(fid_scores)),
-        "std_fid": float(np.std(fid_scores)),
-        "fid_scores": fid_scores,
+        name: getattr(args, name) for name in VQVAE_GRID_FIELDS if getattr(args, name) is not None
     }
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate FID for trained models")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Evaluate FID for all trained models")
     parser.add_argument("--data-dir", type=str, default="data/processed")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints")
     parser.add_argument(
         "--run-name",
         type=str,
         default="",
-        help="Match training run_name (or omit to use default-hparam fingerprint)",
+        help="Match training run_name (or default hyperparameter fingerprint)",
     )
     parser.add_argument("--device", type=str, default="mps")
     parser.add_argument("--n-samples", type=int, default=1000)
@@ -94,21 +39,56 @@ def main() -> None:
         default=None,
         help="Single seed only (default: all SEEDS)",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--models",
+        type=str,
+        default="",
+        help="Comma-separated subset of model types (default: all)",
+    )
+    for name in VQVAE_GRID_FIELDS:
+        flag = f"--{name.replace('_', '-')}"
+        ftype = int if name != "recon_loss" else str
+        choices = ["l1", "mse"] if name == "recon_loss" else None
+        parser.add_argument(flag, type=ftype, default=None, choices=choices)
+    return parser.parse_args()
 
+
+def main() -> None:
+    args = parse_args()
     seeds = [args.seed] if args.seed is not None else SEEDS
 
-    results = []
-    for model_type in MODEL_TYPES:
-        result = evaluate_model(model_type, args, seeds)
-        results.append(result)
+    if args.models.strip():
+        model_types = [m.strip() for m in args.models.split(",") if m.strip()]
+        unknown = set(model_types) - set(MODEL_TYPES)
+        if unknown:
+            msg = f"Unknown model types: {unknown}. Available: {MODEL_TYPES}"
+            raise ValueError(msg)
+    else:
+        model_types = list(MODEL_TYPES)
+
+    overrides = _vqvae_overrides(args)
+    results = evaluate_all(
+        model_types,
+        seeds,
+        device=args.device,
+        data_dir=args.data_dir,
+        checkpoint_dir=args.checkpoint_dir,
+        run_name=args.run_name,
+        n_samples=args.n_samples,
+        vqvae_overrides=overrides or None,
+    )
+
+    for result in results:
         logger.info(
-            "%s: FID = %.2f +/- %.2f", result["model"], result["mean_fid"], result["std_fid"]
+            "%s: FID = %.2f +/- %.2f",
+            result["model"],
+            result["mean_fid"],
+            result["std_fid"],
         )
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(results, indent=2))
+    output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
     logger.info("Results saved to %s", output_path)
 
 
