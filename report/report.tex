@@ -96,8 +96,6 @@ VQ-VAE-1 alone defines $p(x|z)$ via the decoder but not a prior $p(z)$ over disc
 
 \textbf{PixelCNN \cite{oord2016pixel}:} A lightweight autoregressive model with masked convolutions predicts codebook indices on the $16 \times 16$ or $8 \times 8$ latent grid (depending on the VQ-VAE configuration).
 
-\textbf{Comparison protocol:} After training, we generate $4 \times 4$ grids ($16$ images) per seed for both PixelCNN and Tiny LDM, decode through the \emph{same} VQ-VAE, and log wall-clock time on Apple M4 (\texttt{mps}). This isolates prior quality and inference cost while holding the decoder fixed.
-
 \subsection{Training Setup and Hyperparameter Grid}
 
 All models employ the Adam optimizer with $\text{lr} = 2 \times 10^{-4}$ and $(\beta_1, \beta_2) = (0.5, 0.999)$. Training uses a high epoch cap ($1000$) with early stopping (patience $= 15$, $\text{min\_epochs} = 20$, $\text{min\_delta} = 10^{-4}$). $\beta$-VAE and VQ-VAE early stopping monitor \textbf{reconstruction loss} rather than total loss (which includes KL or VQ terms that can plateau early).

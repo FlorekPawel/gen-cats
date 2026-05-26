@@ -85,7 +85,7 @@ cp .env.example .env
 
 ## Reproducibility
 
-Each run resets `random`, `numpy`, and `torch` seeds. MLflow logs hyperparameters, train/val metrics, and 4×4 sample grids. Finished runs (including early-stopped) are marked `finished` in checkpoints and are **not** resumed on restart.
+Each run resets `random`, `numpy`, and `torch` seeds. MLflow logs hyperparameters, train/val metrics, periodic 4×4 sample grids during training, and a final `samples_best.png` from the **best** checkpoint (early stop or max epochs). Finished runs (including early-stopped) are marked `finished` in checkpoints and are **not** resumed on restart.
 
 ## Development
 

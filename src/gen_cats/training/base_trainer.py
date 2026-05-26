@@ -116,11 +116,15 @@ class BaseTrainer(ABC):
         logger.debug("Checkpoint saved: %s", path)
         return path
 
-    def load_checkpoint(self, tag: str = "latest") -> bool:
+    def load_checkpoint(self, tag: str = "latest", *, weights_only: bool = False) -> bool:
         path = self._ckpt_dir / f"{tag}_seed{self.config.seed}.pt"
         if not path.exists():
             return False
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        self.load_state_dicts(checkpoint)
+        if weights_only:
+            return True
+
         ts = checkpoint["train_state"]
         self.state.epoch = ts["epoch"]
         self.state.global_step = ts["global_step"]
@@ -132,7 +136,6 @@ class BaseTrainer(ABC):
             self.early_stopping.counter = es["counter"]
             self.early_stopping.best_score = es["best_score"]
             self.early_stopping.should_stop = es["should_stop"]
-        self.load_state_dicts(checkpoint)
         if self.state.finished:
             logger.info(
                 "Run already finished at epoch %d (early_stopped=%s), will not resume training",
@@ -143,20 +146,46 @@ class BaseTrainer(ABC):
             logger.info("Resumed from %s (epoch %d)", path, self.state.epoch)
         return True
 
-    def _log_samples(self, epoch: int) -> None:
-        """Generate and log sample grid to MLflow."""
-        with torch.no_grad():
-            samples = self.generate_samples(self.config.n_sample_images)
+    def _save_sample_grid(self, samples: torch.Tensor, img_path: Path) -> Path:
+        """Write an (N, C, H, W) tensor grid in [-1, 1] to a PNG file."""
+        from PIL import Image
+
         grid = make_grid(samples, nrow=4, normalize=True, value_range=(-1, 1))
         grid_np = grid.permute(1, 2, 0).cpu().numpy()
         grid_np = (grid_np * 255).clip(0, 255).astype(np.uint8)
-
-        from PIL import Image
-
         img = Image.fromarray(grid_np)
-        img_path = self._ckpt_dir / f"samples_epoch{epoch}.png"
+        img_path.parent.mkdir(parents=True, exist_ok=True)
         img.save(img_path)
+        return img_path
+
+    def _log_samples(self, epoch: int) -> None:
+        """Generate and log sample grid to MLflow (weights at current epoch)."""
+        with torch.no_grad():
+            samples = self.generate_samples(self.config.n_sample_images)
+        img_path = self._save_sample_grid(samples, self._ckpt_dir / f"samples_epoch{epoch}.png")
         mlflow.log_artifact(str(img_path), artifact_path="samples")
+
+    def _best_checkpoint_path(self) -> Path:
+        return self._ckpt_dir / f"best_seed{self.config.seed}.pt"
+
+    def _generate_best_samples(self, *, log_mlflow: bool) -> bool:
+        """Load best checkpoint weights and write ``samples_best.png``."""
+        best_path = self._best_checkpoint_path()
+        if not best_path.exists():
+            logger.warning("No best checkpoint at %s; skipping final sample generation", best_path)
+            return False
+        if not self.load_checkpoint("best", weights_only=True):
+            return False
+
+        self.seed_everything(self.config.seed)
+        with torch.no_grad():
+            samples = self.generate_samples(self.config.n_sample_images)
+        out_path = self._ckpt_dir / "samples_best.png"
+        self._save_sample_grid(samples, out_path)
+        logger.info("Saved best-checkpoint samples to %s", out_path)
+        if log_mlflow:
+            mlflow.log_artifact(str(out_path), artifact_path="samples")
+        return True
 
     def _run_name(self) -> str:
         if self.config.run_name:
@@ -175,6 +204,9 @@ class BaseTrainer(ABC):
         self.load_checkpoint("latest")
 
         if self.state.finished:
+            best_samples = self._ckpt_dir / "samples_best.png"
+            if not best_samples.exists():
+                self._generate_best_samples(log_mlflow=False)
             return {
                 "final_epoch": self.state.epoch + 1,
                 "best_metric": self.state.best_metric,
@@ -260,6 +292,7 @@ class BaseTrainer(ABC):
                 "best_metric": self.state.best_metric,
                 "early_stopped": self.state.early_stopped,
             }
+            self._generate_best_samples(log_mlflow=True)
             mlflow.log_metrics(final_metrics)
 
         return final_metrics

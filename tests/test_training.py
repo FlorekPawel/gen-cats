@@ -211,6 +211,30 @@ class TestBaseTrainer:
         assert mock_mlflow.log_metrics.call_count > 0
 
     @patch("gen_cats.training.base_trainer.mlflow")
+    def test_fit_writes_best_samples(self, mock_mlflow: MagicMock, tmp_path: str) -> None:
+        cfg = TrainConfig(
+            device="cpu",
+            max_epochs=2,
+            checkpoint_dir=str(tmp_path),
+            patience=50,
+            sample_interval=100,
+            log_interval=1,
+        )
+        trainer = DummyTrainer(cfg)
+        ckpt_dir = trainer._ckpt_dir
+        train_loader, val_loader = _make_loaders()
+        trainer.fit(train_loader, val_loader)
+
+        assert (ckpt_dir / "samples_best.png").is_file()
+        assert (ckpt_dir / f"best_seed{cfg.seed}.pt").is_file()
+        best_artifact_calls = [
+            c
+            for c in mock_mlflow.log_artifact.call_args_list
+            if c.args and str(c.args[0]).endswith("samples_best.png")
+        ]
+        assert len(best_artifact_calls) == 1
+
+    @patch("gen_cats.training.base_trainer.mlflow")
     def test_early_stopping_triggers(self, _mock_mlflow: MagicMock, tmp_path: str) -> None:
         cfg = TrainConfig(
             device="cpu",
