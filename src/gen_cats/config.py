@@ -170,12 +170,18 @@ GRIDS: dict[str, dict[str, list[Any]]] = {
         "lr_d": [2e-4, 4e-4],
     },
     "sn_gan": {
+        "n_critic": [1],
         "batch_size": [64, 128],
         "lr": [2e-4],
+        "lr_g": [2e-4],
         "lr_d": [2e-4, 4e-4],
         "d_augment": [False, True],
     },
     "ddim": {
+        "noise_schedule": ["linear", "cosine"],
+        "base_channels": [32, 64],
+    },
+    "tiny_ldm": {
         "noise_schedule": ["linear", "cosine"],
         "base_channels": [32, 64],
     },

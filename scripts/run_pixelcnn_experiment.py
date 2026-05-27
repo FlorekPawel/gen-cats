@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-from dataclasses import fields
+from dataclasses import fields, replace
 from pathlib import Path
 
 from gen_cats.config import SEEDS, TrainConfig
@@ -39,6 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-samples", type=int, default=16)
     parser.add_argument("--vqvae-run-name", type=str, default="")
     parser.add_argument("--skip-train", action="store_true")
+    parser.add_argument("--skip-ldm", action="store_true", help="skip Tiny LDM training")
     parser.add_argument("--skip-compare", action="store_true")
     for name in VQVAE_GRID_FIELDS:
         flag = f"--{name.replace('_', '-')}"
@@ -93,6 +94,28 @@ def main() -> None:
         logger.info("PixelCNN training: %d/%d successful", n_ok, len(results))
         if n_ok == 0:
             raise RuntimeError("All PixelCNN training runs failed")
+
+        if not args.skip_ldm:
+            ldm_base = replace(base, model_type="tiny_ldm")
+            ldm_runner = ExperimentRunner(
+                base_config=ldm_base,
+                grid={},
+                trainer_factory=create_trainer,
+                seeds=SEEDS,
+            )
+            logger.info(
+                "Training Tiny LDM for seeds %s (frozen VQ-VAE: grid num_embeddings=%d, "
+                "feature_map_size=%d, recon_loss=%s)",
+                SEEDS,
+                ldm_base.num_embeddings,
+                ldm_base.feature_map_size,
+                ldm_base.recon_loss,
+            )
+            ldm_results = ldm_runner.run_all(train_loader, val_loader)
+            ldm_ok = sum(1 for r in ldm_results if r["status"] == "success")
+            logger.info("Tiny LDM training: %d/%d successful", ldm_ok, len(ldm_results))
+            if ldm_ok == 0:
+                raise RuntimeError("All Tiny LDM training runs failed")
 
     if not args.skip_compare:
         compare_priors_all_seeds(SEEDS, base, Path(args.output_dir))

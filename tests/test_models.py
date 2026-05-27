@@ -13,7 +13,7 @@ from gen_cats.models.ddim import DDIMScheduler, cosine_beta_schedule, linear_bet
 from gen_cats.models.discriminator import Discriminator, compute_gradient_penalty
 from gen_cats.models.generator import Generator
 from gen_cats.models.pixelcnn import PixelCNN
-from gen_cats.models.unet import UNet
+from gen_cats.models.unet import UNet, default_ch_mults
 from gen_cats.models.vqvae import VQVAE
 from gen_cats.training.dm_trainer import DiffusionTrainer
 from gen_cats.training.gan_trainer import GANTrainer
@@ -194,6 +194,12 @@ class TestGenerator:
         assert out.min() >= -1.0
         assert out.max() <= 1.0
 
+    def test_instance_norm_for_sn_gan_style(self) -> None:
+        g = Generator(latent_dim=64, norm="instance")
+        assert any(isinstance(m, torch.nn.InstanceNorm2d) for m in g.modules())
+        z = torch.randn(B, 64)
+        assert g(z).shape == (B, 3, 128, 128)
+
 
 class TestDiscriminator:
     def test_output_shape(self) -> None:
@@ -250,6 +256,7 @@ class TestGANTrainer:
             sample_interval=100,
         )
         trainer = GANTrainer(cfg)
+        assert trainer._n_critic_steps == 1
         train_loader, val_loader = _dummy_loaders()
         results = trainer.fit(train_loader, val_loader)
         assert results["final_epoch"] == 2
@@ -280,11 +287,19 @@ class TestUNet:
         assert out.shape == (B, 3, 128, 128)
 
     def test_latent_input(self) -> None:
-        model = UNet(in_ch=64, base_ch=32)
+        model = UNet(in_ch=64, base_ch=32, spatial_size=16)
         x = torch.randn(B, 64, 16, 16)
         t = torch.randint(0, 100, (B,))
         out = model(x, t)
         assert out.shape == (B, 64, 16, 16)
+
+    def test_latent_8x8_spatial_size(self) -> None:
+        assert default_ch_mults(8) == (1, 2, 4)
+        model = UNet(in_ch=64, base_ch=32, spatial_size=8)
+        x = torch.randn(B, 64, 8, 8)
+        t = torch.randint(0, 100, (B,))
+        out = model(x, t)
+        assert out.shape == (B, 64, 8, 8)
 
 
 class TestDDIMScheduler:
@@ -308,10 +323,16 @@ class TestDDIMScheduler:
         assert noise.shape == x0.shape
 
     def test_ddim_sample_shape(self) -> None:
-        model = UNet(in_ch=3, base_ch=16)
+        model = UNet(in_ch=3, base_ch=16, spatial_size=128)
         scheduler = DDIMScheduler(timesteps=100, schedule="linear")
         samples = scheduler.ddim_sample(model, (2, 3, 128, 128), torch.device("cpu"), ddim_steps=5)
         assert samples.shape == (2, 3, 128, 128)
+
+    def test_ddim_timesteps_include_last(self) -> None:
+        scheduler = DDIMScheduler(timesteps=1000, schedule="linear")
+        pairs = scheduler._ddim_timestep_pairs(50)
+        assert pairs[0][0] == 999
+        assert pairs[-1][1] == -1
 
 
 class TestDiffusionTrainer:
@@ -369,6 +390,26 @@ class TestDiffusionTrainer:
         train_loader, val_loader = _dummy_loaders()
         results = trainer.fit(train_loader, val_loader)
         assert results["final_epoch"] == 1
+
+
+class TestTinyLDMTrainer:
+    @patch("gen_cats.models.vqvae_checkpoint.load_frozen_vqvae")
+    def test_latent_scaling(self, mock_vqvae: Any, tmp_path: Any) -> None:
+        vqvae = VQVAE(num_embeddings=64, embedding_dim=32, feature_map_size=16)
+        mock_vqvae.return_value = (vqvae, {}, Path("fake.pt"))
+        cfg = TrainConfig(
+            model_type="tiny_ldm",
+            device=DEVICE,
+            base_channels=16,
+            timesteps=50,
+            checkpoint_dir=str(tmp_path),
+        )
+        trainer = DiffusionTrainer(cfg)
+        trainer.build_models()
+        x = torch.randn(B, 3, 128, 128)
+        z = trainer._encode(x)
+        assert trainer.latent_scale > 0
+        assert abs(z.std().item() - 1.0) < 0.5
 
 
 class TestPixelCNNTrainer:

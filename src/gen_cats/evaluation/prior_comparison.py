@@ -50,8 +50,8 @@ def _load_trainer(cfg: TrainConfig, seed: int) -> tuple[object, Path]:
     trainer.build_models()
     trainer.build_optimizers()
     ckpt_path = _resolve_ckpt(Path(cfg.checkpoint_dir), cfg, seed)
-    if not trainer.load_checkpoint("best"):
-        trainer.load_checkpoint("latest")
+    if not trainer.load_checkpoint("best", weights_only=True):
+        trainer.load_checkpoint("latest", weights_only=True)
     return trainer, ckpt_path
 
 

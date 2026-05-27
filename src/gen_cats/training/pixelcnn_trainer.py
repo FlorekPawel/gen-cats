@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -97,6 +98,21 @@ class PixelCNNTrainer(BaseTrainer):
             "vqvae_config": self._vqvae_cfg,
         }
 
+    def _reload_vqvae_from_path(self, path: str | Path) -> None:
+        ckpt_path = Path(path)
+        if not ckpt_path.exists():
+            logger.warning("VQ-VAE checkpoint missing at %s", ckpt_path)
+            return
+        ckpt = torch.load(ckpt_path, map_location=self.device, weights_only=False)
+        self.vqvae.load_state_dict(ckpt["model"])
+        self.vqvae.eval()
+        self.vqvae.requires_grad_(False)
+        self._vqvae_ckpt = ckpt_path
+        logger.info("Reloaded frozen VQ-VAE from %s", ckpt_path)
+
     def load_state_dicts(self, checkpoint: dict[str, Any]) -> None:
         self.pixelcnn.load_state_dict(checkpoint["pixelcnn"])
         self.optimizer.load_state_dict(checkpoint["optimizer"])
+        vqvae_path = checkpoint.get("vqvae_checkpoint")
+        if vqvae_path:
+            self._reload_vqvae_from_path(vqvae_path)

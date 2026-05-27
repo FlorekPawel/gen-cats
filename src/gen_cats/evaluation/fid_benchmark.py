@@ -93,7 +93,7 @@ def evaluate_model(
             trainer.build_models()
             trainer.build_optimizers()
 
-            if not trainer.load_checkpoint("best"):
+            if not trainer.load_checkpoint("best", weights_only=True):
                 logger.warning("No best checkpoint for %s seed=%d, skipping", model_type, seed)
                 continue
 

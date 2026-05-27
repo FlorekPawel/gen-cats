@@ -64,7 +64,7 @@ class PixelCNN(nn.Module):
             blocks.extend(
                 [
                     MaskedConv2d("B", hidden_channels, hidden_channels),
-                    nn.BatchNorm2d(hidden_channels),
+                    nn.GroupNorm(8, hidden_channels),
                     nn.ReLU(inplace=True),
                 ]
             )

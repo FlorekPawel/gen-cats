@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 FAMILY_MODELS: dict[str, list[str]] = {
     "vae": ["beta_vae", "vqvae"],
     "gan": ["wgan_gp", "sn_gan"],
-    "dm": ["ddim"],
+    "dm": ["ddim", "tiny_ldm"],
 }
 
 

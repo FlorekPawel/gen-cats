@@ -18,7 +18,7 @@ class GANTrainer(BaseTrainer):
     """Handles WGAN-GP and SN-GAN via config.model_type dispatch.
 
     WGAN-GP: Wasserstein loss + gradient penalty, n_critic updates per G step.
-    SN-GAN: Hinge loss, spectral norm in discriminator.
+    SN-GAN: Hinge loss, spectral norm in discriminator, 1 D step per G step.
 
     Early stopping for GANs: monitors generator loss stability.
     """
@@ -31,10 +31,24 @@ class GANTrainer(BaseTrainer):
         self.early_stopping.mode = "min"
         self.config.early_stop_metric = "g_loss"
 
+    @property
+    def _is_sn_gan(self) -> bool:
+        return self.config.model_type == "sn_gan"
+
+    @property
+    def _n_critic_steps(self) -> int:
+        """SN-GAN trains D once per G step; WGAN-GP uses ``config.n_critic``."""
+        if self._is_sn_gan:
+            return 1
+        return self.config.n_critic
+
     def build_models(self) -> None:
-        self.generator = Generator(latent_dim=self.config.latent_dim).to(self.device)
-        use_sn = self.config.model_type == "sn_gan"
-        self.discriminator = Discriminator(use_spectral_norm=use_sn).to(self.device)
+        g_norm = "instance" if self._is_sn_gan else "batch"
+        self.generator = Generator(
+            latent_dim=self.config.latent_dim,
+            norm=g_norm,
+        ).to(self.device)
+        self.discriminator = Discriminator(use_spectral_norm=self._is_sn_gan).to(self.device)
 
     def build_optimizers(self) -> None:
         lr_g = self.config.lr_g or self.config.lr
@@ -44,15 +58,24 @@ class GANTrainer(BaseTrainer):
         self.opt_g = create_optimizer(self.generator.parameters(), lr=lr_g, betas=betas_g)
         self.opt_d = create_optimizer(self.discriminator.parameters(), lr=lr_d, betas=betas_d)
 
+    def _augment_real(self, real: torch.Tensor) -> torch.Tensor:
+        """Optional horizontal flip on real images for SN-GAN discriminator."""
+        if not (self._is_sn_gan and self.config.d_augment):
+            return real
+        if torch.rand(1, device=real.device).item() < 0.5:
+            return torch.flip(real, dims=[3])
+        return real
+
     def _train_discriminator(self, real: torch.Tensor) -> dict[str, float]:
         batch_size = real.size(0)
+        real = self._augment_real(real)
         z = torch.randn(batch_size, self.config.latent_dim, device=self.device)
         fake = self.generator(z).detach()
 
         d_real = self.discriminator(real)
         d_fake = self.discriminator(fake)
 
-        if self.config.model_type == "wgan_gp":
+        if not self._is_sn_gan:
             d_loss = d_fake.mean() - d_real.mean()
             gp = compute_gradient_penalty(self.discriminator, real, fake, self.device)
             d_loss = d_loss + self.config.gp_lambda * gp
@@ -70,12 +93,12 @@ class GANTrainer(BaseTrainer):
             "d_fake": d_fake.mean().item(),
         }
 
-    def _train_generator(self) -> dict[str, float]:
-        z = torch.randn(self.config.batch_size, self.config.latent_dim, device=self.device)
+    def _train_generator(self, batch_size: int) -> dict[str, float]:
+        z = torch.randn(batch_size, self.config.latent_dim, device=self.device)
         fake = self.generator(z)
         d_fake = self.discriminator(fake)
 
-        g_loss = -d_fake.mean()
+        g_loss = F.relu(1.0 - d_fake).mean() if self._is_sn_gan else -d_fake.mean()
 
         self.opt_g.zero_grad()
         g_loss.backward()
@@ -89,11 +112,11 @@ class GANTrainer(BaseTrainer):
 
         losses: dict[str, float] = {}
 
-        for _ in range(self.config.n_critic):
+        for _ in range(self._n_critic_steps):
             d_losses = self._train_discriminator(batch)
         losses.update(d_losses)
 
-        g_losses = self._train_generator()
+        g_losses = self._train_generator(batch.size(0))
         losses.update(g_losses)
 
         return losses

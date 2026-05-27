@@ -8,6 +8,17 @@ import torch
 import torch.nn as nn
 
 
+def default_ch_mults(spatial_size: int, max_levels: int = 4) -> tuple[int, ...]:
+    """Pick downsample depth so resolution halves until 1x1 without redundant 1x1 downs.
+
+    Fixed ``(1, 2, 4, 8)`` is correct for 128x128 / 16x16 but breaks skip alignment at 8x8.
+    """
+    if spatial_size < 2 or spatial_size & (spatial_size - 1):
+        raise ValueError(f"spatial_size must be a power of 2 >= 2, got {spatial_size}")
+    n_levels = min(max_levels, int(math.log2(spatial_size)))
+    return tuple(min(2**i, 8) for i in range(n_levels))
+
+
 class SinusoidalPositionEmbedding(nn.Module):
     """Sinusoidal timestep embedding → (B, dim)."""
 
@@ -79,7 +90,8 @@ class UNet(nn.Module):
     Args:
         in_ch: input channels (3 for pixel-space, embedding_dim for latent)
         base_ch: width of first layer (grid: 32 or 64)
-        ch_mults: channel multipliers per level
+        spatial_size: H=W input resolution; sets ``ch_mults`` when omitted
+        ch_mults: channel multipliers per level (overrides ``spatial_size``)
         time_dim: timestep embedding dimension
     """
 
@@ -87,10 +99,16 @@ class UNet(nn.Module):
         self,
         in_ch: int = 3,
         base_ch: int = 64,
-        ch_mults: tuple[int, ...] = (1, 2, 4, 8),
+        spatial_size: int | None = 128,
+        ch_mults: tuple[int, ...] | None = None,
         time_dim: int = 256,
     ) -> None:
         super().__init__()
+        if ch_mults is None:
+            if spatial_size is None:
+                spatial_size = 128
+            ch_mults = default_ch_mults(spatial_size)
+        self.ch_mults = ch_mults
         self.time_embed = nn.Sequential(
             SinusoidalPositionEmbedding(time_dim),
             nn.Linear(time_dim, time_dim),

@@ -2,39 +2,60 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import torch
 import torch.nn as nn
+
+NormKind = Literal["batch", "instance"]
+
+
+def _norm2d(channels: int, kind: NormKind) -> nn.Module:
+    if kind == "instance":
+        return nn.InstanceNorm2d(channels, affine=True)
+    return nn.BatchNorm2d(channels)
 
 
 class Generator(nn.Module):
     """Transposed-conv generator: z (B, latent_dim) -> (B, 3, 128, 128).
 
     Architecture: FC -> 4x4 -> 8x8 -> 16x16 -> 32x32 -> 64x64 -> 128x128
+
+    SN-GAN uses ``instance`` norm (BatchNorm + spectral-norm D often collapses to grey).
     """
 
-    def __init__(self, latent_dim: int = 128, base_ch: int = 64) -> None:
+    def __init__(
+        self,
+        latent_dim: int = 128,
+        base_ch: int = 64,
+        norm: NormKind = "batch",
+    ) -> None:
         super().__init__()
         self.latent_dim = latent_dim
+
+        def norm_layer(ch: int) -> nn.Module:
+            return _norm2d(ch, norm)
+
         self.net = nn.Sequential(
             # z -> (base_ch*8, 4, 4)
             nn.ConvTranspose2d(latent_dim, base_ch * 8, 4, 1, 0, bias=False),
-            nn.BatchNorm2d(base_ch * 8),
+            norm_layer(base_ch * 8),
             nn.ReLU(inplace=True),
             # 4 -> 8
             nn.ConvTranspose2d(base_ch * 8, base_ch * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(base_ch * 8),
+            norm_layer(base_ch * 8),
             nn.ReLU(inplace=True),
             # 8 -> 16
             nn.ConvTranspose2d(base_ch * 8, base_ch * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(base_ch * 4),
+            norm_layer(base_ch * 4),
             nn.ReLU(inplace=True),
             # 16 -> 32
             nn.ConvTranspose2d(base_ch * 4, base_ch * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(base_ch * 2),
+            norm_layer(base_ch * 2),
             nn.ReLU(inplace=True),
             # 32 -> 64
             nn.ConvTranspose2d(base_ch * 2, base_ch, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(base_ch),
+            norm_layer(base_ch),
             nn.ReLU(inplace=True),
             # 64 -> 128
             nn.ConvTranspose2d(base_ch, 3, 4, 2, 1, bias=False),
@@ -46,7 +67,7 @@ class Generator(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.ConvTranspose2d):
                 nn.init.normal_(m.weight, 0.0, 0.02)
-            elif isinstance(m, nn.BatchNorm2d):
+            elif isinstance(m, nn.BatchNorm2d | nn.InstanceNorm2d):
                 nn.init.normal_(m.weight, 1.0, 0.02)
                 nn.init.zeros_(m.bias)
 

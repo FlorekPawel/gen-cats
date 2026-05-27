@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -24,10 +25,12 @@ class DiffusionTrainer(BaseTrainer):
     For "ddim": U-Net predicts noise on 128x128 pixel images.
     For "tiny_ldm": U-Net predicts noise in VQ-VAE latent space;
                     frozen encoder/decoder loaded from best VQ-VAE checkpoint.
+                    Latents are scaled to unit variance before diffusion (noise is N(0,1)).
     """
 
     unet: UNet
     scheduler: DDIMScheduler
+    latent_scale: float = 1.0
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -43,9 +46,11 @@ class DiffusionTrainer(BaseTrainer):
             in_ch = 3
             self.vqvae = None  # type: ignore[assignment]
 
+        spatial = 128 if not is_ldm else self.vqvae.feature_map_size
         self.unet = UNet(
             in_ch=in_ch,
             base_ch=self.config.base_channels,
+            spatial_size=spatial,
         ).to(self.device)
 
         self.scheduler = DDIMScheduler(
@@ -77,18 +82,28 @@ class DiffusionTrainer(BaseTrainer):
         for ema_p, p in zip(self.ema_unet.parameters(), self.unet.parameters(), strict=True):
             ema_p.data.mul_(decay).add_(p.data, alpha=1 - decay)
 
+    def _init_latent_scale(self, z: torch.Tensor) -> None:
+        """Match VQ latent std to diffusion noise (fixes noise-only LDM samples)."""
+        if self.latent_scale != 1.0:
+            return
+        scale = float(z.std().clamp(min=1e-4).item())
+        self.latent_scale = scale
+        logger.info("Tiny LDM latent scale (encoder std): %.6f", scale)
+
     def _encode(self, x: torch.Tensor) -> torch.Tensor:
         """Encode to latent space if LDM, else pass through."""
         if self.vqvae is not None:
             with torch.no_grad():
-                return self.vqvae.encode(x)
+                z = self.vqvae.encode(x)
+            self._init_latent_scale(z)
+            return z / self.latent_scale
         return x
 
     def _decode(self, z: torch.Tensor) -> torch.Tensor:
         """Decode from latent space if LDM, else pass through."""
         if self.vqvae is not None:
             with torch.no_grad():
-                return self.vqvae.decode(z)
+                return self.vqvae.decode(z * self.latent_scale)
         return z
 
     def build_optimizers(self) -> None:
@@ -149,7 +164,13 @@ class DiffusionTrainer(BaseTrainer):
         else:
             shape = (n, 3, 128, 128)
 
-        z = self.scheduler.ddim_sample(model, shape, self.device, ddim_steps=self.config.ddim_steps)
+        z = self.scheduler.ddim_sample(
+            model,
+            shape,
+            self.device,
+            ddim_steps=self.config.ddim_steps,
+            clamp_x0=self.vqvae is None,
+        )
         return self._decode(z)
 
     def state_dicts(self) -> dict[str, Any]:
@@ -161,10 +182,30 @@ class DiffusionTrainer(BaseTrainer):
             d["ema_unet"] = self.ema_unet.state_dict()
         if self.vqvae is not None:
             d["vqvae_checkpoint"] = str(self._vqvae_ckpt)
+            d["latent_scale"] = self.latent_scale
         return d
+
+    def _reload_vqvae_from_path(self, path: str | Path) -> None:
+        if self.vqvae is None:
+            return
+        ckpt_path = Path(path)
+        if not ckpt_path.exists():
+            logger.warning("VQ-VAE checkpoint missing at %s", ckpt_path)
+            return
+        ckpt = torch.load(ckpt_path, map_location=self.device, weights_only=False)
+        self.vqvae.load_state_dict(ckpt["model"])
+        self.vqvae.eval()
+        self.vqvae.requires_grad_(False)
+        self._vqvae_ckpt = ckpt_path
+        logger.info("Reloaded frozen VQ-VAE from %s", ckpt_path)
 
     def load_state_dicts(self, checkpoint: dict[str, Any]) -> None:
         self.unet.load_state_dict(checkpoint["unet"])
         self.optimizer.load_state_dict(checkpoint["optimizer"])
         if self.ema_unet is not None and "ema_unet" in checkpoint:
             self.ema_unet.load_state_dict(checkpoint["ema_unet"])
+        if "latent_scale" in checkpoint:
+            self.latent_scale = float(checkpoint["latent_scale"])
+        vqvae_path = checkpoint.get("vqvae_checkpoint")
+        if vqvae_path:
+            self._reload_vqvae_from_path(vqvae_path)

@@ -70,6 +70,24 @@ class DDIMScheduler:
 
         return sqrt_alpha * x0 + sqrt_one_minus * noise, noise
 
+    def _ddim_timestep_pairs(self, ddim_steps: int) -> list[tuple[int, int]]:
+        """Subsample training timesteps from T-1 down to 0 (inclusive endpoints)."""
+        if ddim_steps < 1:
+            raise ValueError(f"ddim_steps must be >= 1, got {ddim_steps}")
+        if ddim_steps == 1:
+            return [(self.timesteps - 1, -1)]
+
+        steps = torch.linspace(0, self.timesteps - 1, ddim_steps, dtype=torch.long)
+        timestep_seq = steps.tolist()
+        timestep_seq_prev = [-1, *timestep_seq[:-1]]
+        return list(
+            zip(
+                reversed(timestep_seq),
+                reversed(timestep_seq_prev),
+                strict=True,
+            )
+        )
+
     @torch.no_grad()
     def ddim_sample(
         self,
@@ -78,23 +96,27 @@ class DDIMScheduler:
         device: torch.device,
         ddim_steps: int = 50,
         eta: float = 0.0,
+        clamp_x0: bool = True,
     ) -> torch.Tensor:
-        """DDIM deterministic sampling (eta=0) or stochastic (eta>0)."""
-        step_size = self.timesteps // ddim_steps
-        timestep_seq = list(range(0, self.timesteps, step_size))
-        timestep_seq_prev = [-1, *timestep_seq[:-1]]
+        """DDIM deterministic sampling (eta=0) or stochastic (eta>0).
 
+        Args:
+            clamp_x0: clamp predicted x0 to [-1, 1] each step (pixel DDIM only).
+                Disable for latent diffusion — VQ latents are not bounded to [-1, 1].
+        """
         x = torch.randn(shape, device=device)
+        one = torch.tensor(1.0, device=device, dtype=self.alpha_cumprod.dtype)
 
-        for t_cur, t_prev in zip(reversed(timestep_seq), reversed(timestep_seq_prev), strict=True):
+        for t_cur, t_prev in self._ddim_timestep_pairs(ddim_steps):
             t_batch = torch.full((shape[0],), t_cur, device=device, dtype=torch.long)
             pred_noise = model(x, t_batch)
 
             alpha_t = self.alpha_cumprod[t_cur]
-            alpha_prev = self.alpha_cumprod[t_prev] if t_prev >= 0 else torch.tensor(1.0)
+            alpha_prev = self.alpha_cumprod[t_prev] if t_prev >= 0 else one
 
             pred_x0 = (x - torch.sqrt(1 - alpha_t) * pred_noise) / torch.sqrt(alpha_t)
-            pred_x0 = pred_x0.clamp(-1, 1)
+            if clamp_x0:
+                pred_x0 = pred_x0.clamp(-1, 1)
 
             sigma = (
                 eta
@@ -103,7 +125,7 @@ class DDIMScheduler:
             )
 
             dir_xt = torch.sqrt(1 - alpha_prev - sigma**2) * pred_noise
-            noise = torch.randn_like(x) if t_prev > 0 else torch.zeros_like(x)
+            noise = torch.randn_like(x) if t_prev >= 0 else torch.zeros_like(x)
             x = torch.sqrt(alpha_prev) * pred_x0 + dir_xt + sigma * noise
 
         return x
