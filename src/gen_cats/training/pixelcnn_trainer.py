@@ -27,13 +27,17 @@ class PixelCNNTrainer(BaseTrainer):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.config.early_stop_metric = "val_loss"
+        if self.config.vqvae_selection == "slug":
+            self.config.require_vqvae_slug = True
 
     def build_models(self) -> None:
         self.vqvae, self._vqvae_cfg, self._vqvae_ckpt = load_frozen_vqvae(
             self.config.checkpoint_dir,
             self.device,
             self.config,
+            strict=self.config.require_vqvae_slug,
         )
+        logger.info("PixelCNN using frozen VQ-VAE: %s", self._vqvae_ckpt)
         num_embeddings = self.vqvae.quantizer.num_embeddings
         self.pixelcnn = PixelCNN(
             num_embeddings=num_embeddings,

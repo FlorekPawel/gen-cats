@@ -8,14 +8,16 @@ import torch
 import torch.nn as nn
 
 
-def default_ch_mults(spatial_size: int, max_levels: int = 4) -> tuple[int, ...]:
-    """Pick downsample depth so resolution halves until 1x1 without redundant 1x1 downs.
+def default_ch_mults(spatial_size: int, max_levels: int | None = None) -> tuple[int, ...]:
+    """Pick downsample depth so resolution halves until 1x1 (no redundant 1x1 downs).
 
-    Fixed ``(1, 2, 4, 8)`` is correct for 128x128 / 16x16 but breaks skip alignment at 8x8.
+    For 128x128 pixel DDIM this yields 7 levels down to an 8x8 bottleneck before mid blocks.
+    Capped at 8x channel width.
     """
     if spatial_size < 2 or spatial_size & (spatial_size - 1):
         raise ValueError(f"spatial_size must be a power of 2 >= 2, got {spatial_size}")
-    n_levels = min(max_levels, int(math.log2(spatial_size)))
+    full_levels = int(math.log2(spatial_size))
+    n_levels = full_levels if max_levels is None else min(max_levels, full_levels)
     return tuple(min(2**i, 8) for i in range(n_levels))
 
 
@@ -92,6 +94,7 @@ class UNet(nn.Module):
         base_ch: width of first layer (grid: 32 or 64)
         spatial_size: H=W input resolution; sets ``ch_mults`` when omitted
         ch_mults: channel multipliers per level (overrides ``spatial_size``)
+        unet_max_levels: cap downsample depth (``None`` = down to 1x1)
         time_dim: timestep embedding dimension
     """
 
@@ -101,13 +104,14 @@ class UNet(nn.Module):
         base_ch: int = 64,
         spatial_size: int | None = 128,
         ch_mults: tuple[int, ...] | None = None,
+        unet_max_levels: int | None = None,
         time_dim: int = 256,
     ) -> None:
         super().__init__()
         if ch_mults is None:
             if spatial_size is None:
                 spatial_size = 128
-            ch_mults = default_ch_mults(spatial_size)
+            ch_mults = default_ch_mults(spatial_size, max_levels=unet_max_levels)
         self.ch_mults = ch_mults
         self.time_embed = nn.Sequential(
             SinusoidalPositionEmbedding(time_dim),

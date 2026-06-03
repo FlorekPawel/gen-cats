@@ -3,7 +3,7 @@ MLFLOW_PORT := 5050
 
 .PHONY: help setup download-data download-dogcat process-data process-dogcat \
         train-vae train-gan train-dm train-pixelcnn pixelcnn-experiment \
-        sweep-vae sweep-gan sweep-dm run-all \
+        select-vqvae-priors sweep-vae sweep-gan sweep-dm run-all \
         eval eval-fid interpolate chimera \
         mlflow test lint format pre-commit pre-commit-all clean
 
@@ -19,7 +19,8 @@ help:
 	@echo "  make train-dm         - train diffusion model (MODEL=ddim|tiny_ldm)"
 	@echo "  make train-pixelcnn      - train PixelCNN (single SEED)"
 	@echo "  make pixelcnn-experiment - train PixelCNN x3 seeds + compare vs Tiny LDM"
-	@echo "  make sweep-vae        - run VAE grid sweep"
+	@echo "  make sweep-vae        - run VAE grid sweep (+ prior VQ manifest)"
+	@echo "  make select-vqvae-priors - best VQ-VAE per seed for PixelCNN/Tiny LDM"
 	@echo "  make sweep-gan        - run GAN grid sweep"
 	@echo "  make sweep-dm         - run diffusion grid sweep"
 	@echo "  make run-all          - all sweeps + pixelcnn-experiment"
@@ -71,13 +72,14 @@ train-dm:
 
 train-pixelcnn:
 	$(PYTHON) scripts/train.py --model-type pixelcnn --seed $(or $(SEED),42) \
-		--max-epochs $(or $(EPOCHS),80) --sample-interval $(or $(SAMPLE_INTERVAL),10) \
+		--max-epochs $(or $(EPOCHS),1000) --sample-interval $(or $(SAMPLE_INTERVAL),10) \
 		$(if $(NUM_EMBEDDINGS),--num-embeddings $(NUM_EMBEDDINGS),) \
 		$(if $(FEATURE_MAP_SIZE),--feature-map-size $(FEATURE_MAP_SIZE),) \
 		$(if $(RECON_LOSS),--recon-loss $(RECON_LOSS),)
 
 pixelcnn-experiment:
-	$(PYTHON) scripts/run_pixelcnn_experiment.py --max-epochs $(or $(EPOCHS),80) \
+	$(PYTHON) scripts/run_pixelcnn_experiment.py \
+		$(if $(EPOCHS),--max-epochs $(EPOCHS),) \
 		--n-samples $(or $(N),16) \
 		$(if $(SKIP_TRAIN),--skip-train,) $(if $(SKIP_COMPARE),--skip-compare,) \
 		$(if $(NUM_EMBEDDINGS),--num-embeddings $(NUM_EMBEDDINGS),) \
@@ -88,13 +90,16 @@ pixelcnn-experiment:
 sweep-vae:
 	$(PYTHON) scripts/run_sweep.py --family vae
 
+select-vqvae-priors:
+	$(PYTHON) scripts/select_vqvae_priors.py
+
 sweep-gan:
 	$(PYTHON) scripts/run_sweep.py --family gan
 
 sweep-dm:
 	$(PYTHON) scripts/run_sweep.py --family dm
 
-run-all: sweep-vae sweep-gan sweep-dm pixelcnn-experiment
+run-all: sweep-vae sweep-gan sweep-dm select-vqvae-priors pixelcnn-experiment
 
 # ─── Evaluation ───────────────────────────────────────────────
 eval: eval-fid interpolate

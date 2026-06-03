@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 import torch
+
 from gen_cats.config import SEEDS, TrainConfig
 from gen_cats.evaluation.interpolation import interpolation_strip, save_interpolation_grid
 from gen_cats.factory import create_trainer

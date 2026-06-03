@@ -7,6 +7,7 @@ import logging
 
 from gen_cats.config import GRIDS, SEEDS, TrainConfig
 from gen_cats.factory import create_dataloaders, create_trainer
+from gen_cats.models.vqvae_prior_selection import save_vqvae_prior_manifest
 from gen_cats.training.experiment_runner import ExperimentRunner
 
 logging.basicConfig(
@@ -56,6 +57,12 @@ def main() -> None:
 
         n_ok = sum(1 for r in results if r["status"] == "success")
         logger.info("Sweep %s done: %d/%d successful", model_type, n_ok, len(results))
+
+    if args.family == "vae" and "vqvae" in model_types:
+        try:
+            save_vqvae_prior_manifest(base.checkpoint_dir, list(SEEDS))
+        except Exception:
+            logger.warning("Could not build VQ-VAE prior manifest", exc_info=True)
 
 
 if __name__ == "__main__":

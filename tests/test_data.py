@@ -7,13 +7,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+from PIL import Image
+
 from gen_cats.data.cat_dataset import CatFaceDataset, default_transform
 from gen_cats.data.processing import (
     crop_cat_face,
     parse_cat_annotation,
     process_dataset,
 )
-from PIL import Image
 
 
 @pytest.fixture

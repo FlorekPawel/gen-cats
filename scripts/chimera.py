@@ -9,10 +9,11 @@ from typing import Any
 
 import numpy as np
 import torch
+from torch.utils.data import DataLoader
+
 from gen_cats.config import SEEDS, TrainConfig
 from gen_cats.data.cat_dataset import CatFaceDataset
 from gen_cats.factory import create_trainer
-from torch.utils.data import DataLoader
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)

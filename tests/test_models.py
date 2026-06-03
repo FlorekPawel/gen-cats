@@ -7,6 +7,8 @@ from typing import Any
 from unittest.mock import patch
 
 import torch
+from torch.utils.data import DataLoader, TensorDataset
+
 from gen_cats.config import TrainConfig
 from gen_cats.models.beta_vae import BetaVAE
 from gen_cats.models.ddim import DDIMScheduler, cosine_beta_schedule, linear_beta_schedule
@@ -19,7 +21,6 @@ from gen_cats.training.dm_trainer import DiffusionTrainer
 from gen_cats.training.gan_trainer import GANTrainer
 from gen_cats.training.pixelcnn_trainer import PixelCNNTrainer
 from gen_cats.training.vae_trainer import VAETrainer
-from torch.utils.data import DataLoader, TensorDataset
 
 DEVICE = "cpu"
 B = 4
@@ -293,6 +294,13 @@ class TestUNet:
         out = model(x, t)
         assert out.shape == (B, 64, 16, 16)
 
+    def test_deep_unet_128(self) -> None:
+        assert default_ch_mults(128) == (1, 2, 4, 8, 8, 8, 8)
+        model = UNet(in_ch=3, base_ch=32, spatial_size=128)
+        x = torch.randn(1, 3, 128, 128)
+        t = torch.tensor([10])
+        assert model(x, t).shape == (1, 3, 128, 128)
+
     def test_latent_8x8_spatial_size(self) -> None:
         assert default_ch_mults(8) == (1, 2, 4)
         model = UNet(in_ch=64, base_ch=32, spatial_size=8)
@@ -406,9 +414,11 @@ class TestTinyLDMTrainer:
         )
         trainer = DiffusionTrainer(cfg)
         trainer.build_models()
+        _, val_loader = _dummy_loaders()
+        trainer.calibrate_latent_scale(val_loader)
+        assert trainer.latent_scale > 0
         x = torch.randn(B, 3, 128, 128)
         z = trainer._encode(x)
-        assert trainer.latent_scale > 0
         assert abs(z.std().item() - 1.0) < 0.5
 
 

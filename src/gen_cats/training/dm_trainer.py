@@ -22,10 +22,8 @@ logger = logging.getLogger(__name__)
 class DiffusionTrainer(BaseTrainer):
     """Handles pixel-space DDIM and Tiny LDM.
 
-    For "ddim": U-Net predicts noise on 128x128 pixel images.
-    For "tiny_ldm": U-Net predicts noise in VQ-VAE latent space;
-                    frozen encoder/decoder loaded from best VQ-VAE checkpoint.
-                    Latents are scaled to unit variance before diffusion (noise is N(0,1)).
+    For "ddim": U-Net predicts noise on 128x128 pixel images (deep U-Net, EMA on by default).
+    For "tiny_ldm": U-Net predicts noise in scaled VQ-VAE latent space with frozen encoder/decoder.
     """
 
     unet: UNet
@@ -35,6 +33,10 @@ class DiffusionTrainer(BaseTrainer):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.config.early_stop_metric = "val_loss"
+        if self.config.model_type in ("ddim", "tiny_ldm"):
+            self.config.use_ema = True
+        if self.config.model_type == "tiny_ldm" and self.config.vqvae_selection == "slug":
+            self.config.require_vqvae_slug = True
 
     def build_models(self) -> None:
         is_ldm = self.config.model_type == "tiny_ldm"
@@ -51,7 +53,14 @@ class DiffusionTrainer(BaseTrainer):
             in_ch=in_ch,
             base_ch=self.config.base_channels,
             spatial_size=spatial,
+            unet_max_levels=self.config.unet_max_levels,
         ).to(self.device)
+        logger.info(
+            "U-Net ch_mults=%s base_ch=%d spatial=%d",
+            self.unet.ch_mults,
+            self.config.base_channels,
+            spatial,
+        )
 
         self.scheduler = DDIMScheduler(
             timesteps=self.config.timesteps,
@@ -72,8 +81,44 @@ class DiffusionTrainer(BaseTrainer):
             self.config.checkpoint_dir,
             self.device,
             self.config,
+            strict=self.config.require_vqvae_slug,
         )
         logger.info("Using VQ-VAE checkpoint: %s", self._vqvae_ckpt)
+
+    def on_train_start(self, val_loader: DataLoader[Any]) -> None:
+        if self.config.model_type == "tiny_ldm" and self.latent_scale <= 1.0 + 1e-6:
+            self.calibrate_latent_scale(val_loader)
+
+    @torch.no_grad()
+    def calibrate_latent_scale(self, val_loader: DataLoader[Any]) -> None:
+        """Estimate latent std on validation data (Tiny LDM only)."""
+        if self.vqvae is None:
+            return
+
+        self.vqvae.eval()
+        chunks: list[torch.Tensor] = []
+        max_batches = self.config.latent_scale_batches
+
+        for i, batch in enumerate(val_loader):
+            if i >= max_batches:
+                break
+            if isinstance(batch, list | tuple):
+                batch = batch[0]
+            batch = batch.to(self.device)
+            z = self.vqvae.encode(batch)
+            chunks.append(z.reshape(z.size(0), -1))
+
+        if not chunks:
+            logger.warning("No validation batches for latent scale calibration")
+            return
+
+        scale = torch.cat(chunks, dim=0).std().clamp(min=1e-4)
+        self.latent_scale = float(scale.item())
+        logger.info(
+            "Tiny LDM latent scale from %d val batch(es): %.6f",
+            min(len(chunks), max_batches),
+            self.latent_scale,
+        )
 
     def _update_ema(self) -> None:
         if self.ema_unet is None:
@@ -82,20 +127,11 @@ class DiffusionTrainer(BaseTrainer):
         for ema_p, p in zip(self.ema_unet.parameters(), self.unet.parameters(), strict=True):
             ema_p.data.mul_(decay).add_(p.data, alpha=1 - decay)
 
-    def _init_latent_scale(self, z: torch.Tensor) -> None:
-        """Match VQ latent std to diffusion noise (fixes noise-only LDM samples)."""
-        if self.latent_scale != 1.0:
-            return
-        scale = float(z.std().clamp(min=1e-4).item())
-        self.latent_scale = scale
-        logger.info("Tiny LDM latent scale (encoder std): %.6f", scale)
-
     def _encode(self, x: torch.Tensor) -> torch.Tensor:
         """Encode to latent space if LDM, else pass through."""
         if self.vqvae is not None:
             with torch.no_grad():
                 z = self.vqvae.encode(x)
-            self._init_latent_scale(z)
             return z / self.latent_scale
         return x
 

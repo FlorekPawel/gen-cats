@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+
 from gen_cats.evaluation.interpolation import (
     linear_interpolation,
     save_interpolation_grid,

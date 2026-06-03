@@ -192,6 +192,10 @@ class BaseTrainer(ABC):
             return self.config.run_name
         return f"{self.config.model_type}_seed{self.config.seed}"
 
+    def on_train_start(self, _val_loader: DataLoader[Any]) -> None:
+        """Hook after ``build_models`` / ``load_checkpoint``; override in subclasses."""
+        _ = _val_loader
+
     def fit(
         self,
         train_loader: DataLoader[Any],
@@ -202,6 +206,7 @@ class BaseTrainer(ABC):
         self.build_models()
         self.build_optimizers()
         self.load_checkpoint("latest")
+        self.on_train_start(val_loader)
 
         if self.state.finished:
             best_samples = self._ckpt_dir / "samples_best.png"
@@ -228,7 +233,7 @@ class BaseTrainer(ABC):
                 self.state.epoch = epoch
 
                 epoch_losses: dict[str, list[float]] = {}
-                batch_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}", leave=False, unit="batch")
+                batch_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}", leave=False, unit="batch")
                 for batch in batch_bar:
                     if isinstance(batch, list | tuple):
                         batch = batch[0]

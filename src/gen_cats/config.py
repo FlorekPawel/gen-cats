@@ -60,9 +60,15 @@ class TrainConfig:
     timesteps: int = 1000
     noise_schedule: str = "linear"
     base_channels: int = 64
-    ddim_steps: int = 50
-    use_ema: bool = False
+    ddim_steps: int = 100
+    use_ema: bool = True
     ema_decay: float = 0.999
+    unet_max_levels: int | None = None
+
+    # PixelCNN / Tiny LDM: VQ-VAE resolution — slug | manifest | auto (manifest then slug)
+    require_vqvae_slug: bool = False
+    vqvae_selection: str = "auto"
+    latent_scale_batches: int = 32
 
     # PixelCNN prior (vqvae_seed None → same seed as run; slug from VQ-VAE fields below)
     prior_hidden_channels: int = 128
@@ -179,10 +185,13 @@ GRIDS: dict[str, dict[str, list[Any]]] = {
     },
     "ddim": {
         "noise_schedule": ["linear", "cosine"],
-        "base_channels": [32, 64],
+        "base_channels": [64, 128],
+        "use_ema": [True],
     },
     "tiny_ldm": {
         "noise_schedule": ["linear", "cosine"],
-        "base_channels": [32, 64],
+        "base_channels": [64, 128],
+        "use_ema": [True],
+        "ddim_steps": [50, 100],
     },
 }

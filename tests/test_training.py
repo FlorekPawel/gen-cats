@@ -6,6 +6,8 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import torch
+from torch.utils.data import DataLoader, TensorDataset
+
 from gen_cats.config import (
     TrainConfig,
     checkpoint_run_slug,
@@ -18,7 +20,6 @@ from gen_cats.config import (
 from gen_cats.training.base_trainer import BaseTrainer
 from gen_cats.training.early_stopping import EarlyStopping
 from gen_cats.training.experiment_runner import ExperimentRunner
-from torch.utils.data import DataLoader, TensorDataset
 
 
 class TestTrainConfig:
