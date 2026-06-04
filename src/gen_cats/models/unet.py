@@ -11,8 +11,9 @@ import torch.nn as nn
 def default_ch_mults(spatial_size: int, max_levels: int | None = None) -> tuple[int, ...]:
     """Pick downsample depth so resolution halves until 1x1 (no redundant 1x1 downs).
 
-    For 128x128 pixel DDIM this yields 7 levels down to an 8x8 bottleneck before mid blocks.
-    Capped at 8x channel width.
+    Full depth (``max_levels=None``) downs to 1x1.
+    For 128px DDIM use ``max_levels=4`` for an 8x8 bottleneck.
+    Channel multipliers capped at 8x ``base_ch``.
     """
     if spatial_size < 2 or spatial_size & (spatial_size - 1):
         raise ValueError(f"spatial_size must be a power of 2 >= 2, got {spatial_size}")

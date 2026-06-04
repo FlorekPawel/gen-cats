@@ -167,10 +167,19 @@ class VQVAE(nn.Module):
         return recon, vq_loss, indices
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
-        """Encode to quantized latent (for LDM use in Milestone 5)."""
+        """Encode to quantized latent (codebook vectors)."""
         z_e = self.encoder(x)
         z_q, _, _ = self.quantizer(z_e)
         return z_q
+
+    def encode_continuous(self, x: torch.Tensor) -> torch.Tensor:
+        """Pre-quantization encoder output — use for latent diffusion (Gaussian noise)."""
+        return self.encoder(x)
+
+    def decode_latent(self, z: torch.Tensor) -> torch.Tensor:
+        """Decode continuous or noisy latents: quantize to codebook then decoder."""
+        z_q, _, _ = self.quantizer(z)
+        return self.decoder(z_q)
 
     @torch.no_grad()
     def encode_indices(self, x: torch.Tensor) -> torch.Tensor:

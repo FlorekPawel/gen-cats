@@ -301,6 +301,11 @@ class TestUNet:
         t = torch.tensor([10])
         assert model(x, t).shape == (1, 3, 128, 128)
 
+    def test_ddim_default_unet_bottleneck_8x8(self) -> None:
+        assert default_ch_mults(128, max_levels=4) == (1, 2, 4, 8)
+        model = UNet(in_ch=3, base_ch=32, spatial_size=128, unet_max_levels=4)
+        assert model(torch.randn(1, 3, 128, 128), torch.tensor([0])).shape == (1, 3, 128, 128)
+
     def test_latent_8x8_spatial_size(self) -> None:
         assert default_ch_mults(8) == (1, 2, 4)
         model = UNet(in_ch=64, base_ch=32, spatial_size=8)
@@ -308,6 +313,11 @@ class TestUNet:
         t = torch.randint(0, 100, (B,))
         out = model(x, t)
         assert out.shape == (B, 64, 8, 8)
+
+    def test_ldm_unet_caps_levels(self) -> None:
+        assert default_ch_mults(16, max_levels=3) == (1, 2, 4)
+        model = UNet(in_ch=64, base_ch=32, spatial_size=16, unet_max_levels=3)
+        assert model(torch.randn(1, 64, 16, 16), torch.tensor([0])).shape == (1, 64, 16, 16)
 
 
 class TestDDIMScheduler:
@@ -363,6 +373,17 @@ class TestDiffusionTrainer:
         train_loader, val_loader = _dummy_loaders()
         results = trainer.fit(train_loader, val_loader)
         assert results["final_epoch"] == 2
+
+    def test_ddim_builds_8x8_bottleneck_unet(self, tmp_path: Any) -> None:
+        cfg = TrainConfig(
+            model_type="ddim",
+            device=DEVICE,
+            base_channels=16,
+            checkpoint_dir=str(tmp_path),
+        )
+        trainer = DiffusionTrainer(cfg)
+        trainer.build_models()
+        assert trainer.unet.ch_mults == (1, 2, 4, 8)
 
     @patch("gen_cats.training.base_trainer.mlflow")
     def test_ddim_generates_samples(self, _mock_mlflow: Any, tmp_path: Any) -> None:

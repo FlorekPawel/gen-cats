@@ -27,8 +27,8 @@ scripts/                   # invoked by Makefile targets
 | VAE | VQ-VAE-1 | Discrete codes + decoder | codebook ∈ {512, 1024}, map ∈ {16×16, 8×8}, recon ∈ {L1, L2} |
 | GAN | WGAN-GP | Adversarial | `n_critic` ∈ {3, 5}, batch, symmetric vs TTUR LR |
 | GAN | SN-GAN | Adversarial + spectral norm | batch, LR, optional D augmentation |
-| DM | DDIM | Pixel-space diffusion (deep U-Net → 1×1 bottleneck) | schedule, `base_channels` ∈ {64, 128}, **EMA on** |
-| DM | Tiny LDM | Diffusion in **scaled frozen VQ** latent | **Auto VQ pick** via `prior_best_by_seed.json` (or pin slug); latent calibration, EMA |
+| DM | DDIM | Pixel-space diffusion (U-Net → **8×8** bottleneck, EMA val/sample) | schedule, `base_channels`, `ddim_steps` grid, EMA |
+| DM | Tiny LDM | Diffusion on **continuous** VQ encoder latents (quantize at decode) | Auto VQ manifest, val `latent_scale`, shallow U-Net on 16×16 grid, EMA |
 | Prior | **PixelCNN** | AR prior over VQ **code indices** | Same VQ resolution as Tiny LDM; `max_epochs` via CLI (default 1000 + early stop) |
 
 After `make sweep-vae`, run `make select-vqvae-priors` (or rely on the sweep’s auto-write) to build `checkpoints/vqvae/prior_best_by_seed.json`: for each seed, the VQ grid cell with the lowest validation `recon` is used for PixelCNN and Tiny LDM. Pin a cell with `NUM_EMBEDDINGS` / `FEATURE_MAP_SIZE` / `RECON_LOSS` or `--vqvae-selection slug`.

@@ -187,6 +187,7 @@ GRIDS: dict[str, dict[str, list[Any]]] = {
         "noise_schedule": ["linear", "cosine"],
         "base_channels": [64, 128],
         "use_ema": [True],
+        "ddim_steps": [50, 100],
     },
     "tiny_ldm": {
         "noise_schedule": ["linear", "cosine"],

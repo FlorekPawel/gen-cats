@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import math
 from pathlib import Path
 from typing import Any
 
@@ -49,17 +50,23 @@ class DiffusionTrainer(BaseTrainer):
             self.vqvae = None  # type: ignore[assignment]
 
         spatial = 128 if not is_ldm else self.vqvae.feature_map_size
+        unet_max_levels = self.config.unet_max_levels
+        if unet_max_levels is None:
+            log_sp = int(math.log2(spatial))
+            # LDM: 16→2x2 / 8→4x4. DDIM: 128→8x8 (avoid 1x1 mid).
+            unet_max_levels = max(2, log_sp - 1) if is_ldm else max(2, log_sp - 3)
         self.unet = UNet(
             in_ch=in_ch,
             base_ch=self.config.base_channels,
             spatial_size=spatial,
-            unet_max_levels=self.config.unet_max_levels,
+            unet_max_levels=unet_max_levels,
         ).to(self.device)
         logger.info(
-            "U-Net ch_mults=%s base_ch=%d spatial=%d",
+            "U-Net ch_mults=%s base_ch=%d spatial=%d max_levels=%s",
             self.unet.ch_mults,
             self.config.base_channels,
             spatial,
+            unet_max_levels,
         )
 
         self.scheduler = DDIMScheduler(
@@ -105,7 +112,7 @@ class DiffusionTrainer(BaseTrainer):
             if isinstance(batch, list | tuple):
                 batch = batch[0]
             batch = batch.to(self.device)
-            z = self.vqvae.encode(batch)
+            z = self.vqvae.encode_continuous(batch)
             chunks.append(z.reshape(z.size(0), -1))
 
         if not chunks:
@@ -128,18 +135,18 @@ class DiffusionTrainer(BaseTrainer):
             ema_p.data.mul_(decay).add_(p.data, alpha=1 - decay)
 
     def _encode(self, x: torch.Tensor) -> torch.Tensor:
-        """Encode to latent space if LDM, else pass through."""
+        """LDM: continuous pre-quant latents, scaled to ~unit std. Pixels: identity."""
         if self.vqvae is not None:
             with torch.no_grad():
-                z = self.vqvae.encode(x)
+                z = self.vqvae.encode_continuous(x)
             return z / self.latent_scale
         return x
 
     def _decode(self, z: torch.Tensor) -> torch.Tensor:
-        """Decode from latent space if LDM, else pass through."""
+        """LDM: unscale, vector-quantize, then VQ decoder. Pixels: identity."""
         if self.vqvae is not None:
             with torch.no_grad():
-                return self.vqvae.decode(z * self.latent_scale)
+                return self.vqvae.decode_latent(z * self.latent_scale)
         return z
 
     def build_optimizers(self) -> None:
@@ -164,9 +171,16 @@ class DiffusionTrainer(BaseTrainer):
 
         return {"loss": loss.item()}
 
+    def _denoise_model(self) -> UNet:
+        """Model used for val / sampling (EMA when enabled)."""
+        if self.ema_unet is not None:
+            return self.ema_unet
+        return self.unet
+
     @torch.no_grad()
     def validate(self, val_loader: DataLoader[Any]) -> dict[str, float]:
-        self.unet.eval()
+        model = self._denoise_model()
+        model.eval()
         total_loss = 0.0
         n = 0
 
@@ -180,7 +194,7 @@ class DiffusionTrainer(BaseTrainer):
             t = torch.randint(0, self.config.timesteps, (x.size(0),), device=self.device)
             x_noisy, _ = self.scheduler.q_sample(x, t, noise)
 
-            pred_noise = self.unet(x_noisy, t)
+            pred_noise = model(x_noisy, t)
             loss = F.mse_loss(pred_noise, noise)
 
             total_loss += loss.item() * x.size(0)
@@ -191,7 +205,7 @@ class DiffusionTrainer(BaseTrainer):
 
     @torch.no_grad()
     def generate_samples(self, n: int) -> torch.Tensor:
-        model = self.ema_unet if self.ema_unet is not None else self.unet
+        model = self._denoise_model()
         model.eval()
 
         if self.vqvae is not None:
