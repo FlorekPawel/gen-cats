@@ -11,48 +11,21 @@ from pathlib import Path
 import torch
 from torchvision.utils import make_grid, save_image
 
-from gen_cats.config import TrainConfig, checkpoint_run_slug, effective_vqvae_seed
-from gen_cats.factory import create_trainer
+from gen_cats.config import TrainConfig, effective_vqvae_seed
+from gen_cats.evaluation.checkpoint_resolve import load_trainer_for_eval
 
 logger = logging.getLogger(__name__)
 
 
-def _resolve_ckpt(
-    checkpoint_dir: Path,
-    cfg: TrainConfig,
-    seed: int,
-) -> Path:
-    slug = checkpoint_run_slug(replace(cfg, seed=seed))
-    path = checkpoint_dir / cfg.model_type / slug / f"best_seed{seed}.pt"
-    if path.exists():
-        return path
-    root = checkpoint_dir / cfg.model_type
-    candidates = sorted(
-        root.glob(f"**/best_seed{seed}.pt"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    if not candidates:
-        candidates = sorted(
-            root.glob("**/best_seed*.pt"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-    if not candidates:
-        msg = f"No {cfg.model_type} checkpoint under {root}/"
-        raise FileNotFoundError(msg)
-    return candidates[0]
-
-
 def _load_trainer(cfg: TrainConfig, seed: int) -> tuple[object, Path]:
     run_cfg = replace(cfg, seed=seed, vqvae_seed=None)
-    trainer = create_trainer(run_cfg)
-    trainer.build_models()
-    trainer.build_optimizers()
-    ckpt_path = _resolve_ckpt(Path(cfg.checkpoint_dir), cfg, seed)
-    if not trainer.load_checkpoint("best", weights_only=True):
-        trainer.load_checkpoint("latest", weights_only=True)
-    return trainer, ckpt_path
+    loaded = load_trainer_for_eval(run_cfg)
+    if loaded is None:
+        loaded = load_trainer_for_eval(run_cfg, tag="latest")
+    if loaded is None:
+        msg = f"No {cfg.model_type} checkpoint under {cfg.checkpoint_dir}/{cfg.model_type}/"
+        raise FileNotFoundError(msg)
+    return loaded
 
 
 def _timed_samples(trainer: object, n: int) -> tuple[torch.Tensor, float]:

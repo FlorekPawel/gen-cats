@@ -9,8 +9,8 @@ from pathlib import Path
 import torch
 
 from gen_cats.config import SEEDS, TrainConfig
+from gen_cats.evaluation.checkpoint_resolve import load_trainer_for_eval
 from gen_cats.evaluation.interpolation import interpolation_strip, save_interpolation_grid
-from gen_cats.factory import create_trainer
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -36,24 +36,22 @@ def generate_interpolation(
         run_name=run_name,
     )
 
-    trainer = create_trainer(cfg)
-    trainer.build_models()
-    trainer.build_optimizers()
-
-    if not trainer.load_checkpoint("best"):
+    loaded = load_trainer_for_eval(cfg)
+    if loaded is None:
         logger.warning("No best checkpoint for %s seed=%d, skipping", model_type, seed)
         return
+    trainer, _ = loaded
 
     if model_type not in ("beta_vae", "wgan_gp", "sn_gan"):
         logger.info("Interpolation not supported for %s", model_type)
         return
 
     if hasattr(trainer, "model"):
-        decoder_fn = lambda z: trainer.model.decoder(z)  # noqa: E731
-        latent_dim = cfg.latent_dim
+        decoder_fn = lambda z: trainer.model.decoder(z)  # noqa: E731  # type: ignore[attr-defined]
+        latent_dim = trainer.config.latent_dim
     elif hasattr(trainer, "generator"):
         decoder_fn = lambda z: trainer.generator(z)  # noqa: E731
-        latent_dim = cfg.latent_dim
+        latent_dim = trainer.config.latent_dim
     else:
         logger.warning("Cannot find decoder for %s seed=%d", model_type, seed)
         return

@@ -10,8 +10,9 @@ import numpy as np
 import torch
 
 from gen_cats.config import TrainConfig
+from gen_cats.evaluation.checkpoint_resolve import load_trainer_for_eval
 from gen_cats.evaluation.fid import compute_fid_from_loaders
-from gen_cats.factory import create_dataloaders, create_trainer
+from gen_cats.factory import create_dataloaders
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ def build_eval_config(
         checkpoint_dir=checkpoint_dir,
         run_name=run_name,
         vqvae_seed=None,
+        vqvae_selection="auto",
     )
     if vqvae_overrides and model_type in VQVAE_LINKED_MODELS:
         cfg_dict = {f.name: getattr(cfg, f.name) for f in fields(cfg)}
@@ -89,18 +91,15 @@ def evaluate_model(
         )
 
         try:
-            trainer = create_trainer(cfg)
-            trainer.build_models()
-            trainer.build_optimizers()
-
-            if not trainer.load_checkpoint("best", weights_only=True):
+            loaded = load_trainer_for_eval(cfg)
+            if loaded is None:
                 logger.warning("No best checkpoint for %s seed=%d, skipping", model_type, seed)
                 continue
-
-            _train_loader, val_loader = create_dataloaders(cfg)
+            trainer, _ = loaded
+            _train_loader, val_loader = create_dataloaders(trainer.config)
 
             def gen_fn(n: int, _t: object = trainer) -> torch.Tensor:
-                return _t.generate_samples(n).cpu()
+                return _t.generate_samples(n).cpu()  # type: ignore[attr-defined]
 
             fid = compute_fid_from_loaders(
                 val_loader,

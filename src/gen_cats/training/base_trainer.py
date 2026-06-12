@@ -52,7 +52,6 @@ class BaseTrainer(ABC):
 
         slug = checkpoint_run_slug(config)
         self._ckpt_dir = Path(config.checkpoint_dir) / config.model_type / slug
-        self._ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     def seed_everything(self, seed: int) -> None:
         """Hard-reset all RNGs before training."""
@@ -95,6 +94,7 @@ class BaseTrainer(ABC):
         return True
 
     def save_checkpoint(self, tag: str = "latest") -> Path:
+        self._ckpt_dir.mkdir(parents=True, exist_ok=True)
         path = self._ckpt_dir / f"{tag}_seed{self.config.seed}.pt"
         payload: dict[str, Any] = {
             "config": config_to_dict(self.config),
