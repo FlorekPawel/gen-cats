@@ -51,6 +51,27 @@ class TestFIDBenchmark:
         assert "pixelcnn" in MODEL_TYPES
         assert "tiny_ldm" in MODEL_TYPES
 
+    def test_best_slug_for_model(self) -> None:
+        from gen_cats.evaluation.fid_benchmark import best_slug_for_model
+
+        results = [
+            {
+                "model": "wgan_gp",
+                "runs": [
+                    {"slug": "aaa", "mean_fid": 50.0, "hyperparameters": {"n_critic": 3}},
+                    {"slug": "bbb", "mean_fid": 40.0, "hyperparameters": {"n_critic": 5}},
+                ],
+                "best_run": {
+                    "slug": "bbb",
+                    "mean_fid": 40.0,
+                    "hyperparameters": {"n_critic": 5},
+                },
+            }
+        ]
+        slug, hparams = best_slug_for_model(results, "wgan_gp")
+        assert slug == "bbb"
+        assert hparams["n_critic"] == 5
+
     def test_build_eval_config_vqvae_fields(self) -> None:
         from gen_cats.evaluation.fid_benchmark import build_eval_config
 

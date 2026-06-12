@@ -26,7 +26,7 @@ help:
 	@echo "  make run-all          - all sweeps + pixelcnn-experiment"
 	@echo "  make eval             - FID + interpolations (x3 seeds each)"
 	@echo "  make eval-fid         - FID for all 7 model families (x3 seeds)"
-	@echo "  make interpolate      - interpolation strips only"
+	@echo "  make interpolate      - interpolation (best FID cell from results/fid_scores.json)"
 	@echo "  make chimera          - WGAN-GP on dog+cat mix (needs process-dogcat)"
 	@echo "  make mlflow           - start local MLflow UI"
 	@echo "  make test             - run tests"

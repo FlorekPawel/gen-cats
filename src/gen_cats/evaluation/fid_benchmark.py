@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections import defaultdict
 from dataclasses import fields
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -204,3 +206,37 @@ def evaluate_all(
 ) -> list[dict[str, Any]]:
     """Run FID for each model type (all grid cells per type)."""
     return [evaluate_model(mt, seeds, **kwargs) for mt in model_types]
+
+
+def load_fid_score_results(path: str | Path) -> list[dict[str, Any]]:
+    """Load ``results/fid_scores.json`` produced by ``scripts/evaluate.py``."""
+    fid_path = Path(path)
+    if not fid_path.is_file():
+        msg = f"FID results not found at {fid_path}. Run `make eval-fid` first."
+        raise FileNotFoundError(msg)
+    data = json.loads(fid_path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        msg = f"Expected a JSON list in {fid_path}"
+        raise ValueError(msg)
+    return data
+
+
+def best_slug_for_model(
+    fid_results: list[dict[str, Any]],
+    model_type: str,
+) -> tuple[str, dict[str, Any]]:
+    """Return (slug, hyperparameters) for the lowest-mean-FID grid cell of ``model_type``."""
+    for entry in fid_results:
+        if entry.get("model") != model_type:
+            continue
+        best_run = entry.get("best_run")
+        if isinstance(best_run, dict) and best_run.get("slug"):
+            return str(best_run["slug"]), dict(best_run.get("hyperparameters") or {})
+        runs = entry.get("runs") or []
+        if runs:
+            best = min(runs, key=lambda r: float(r["mean_fid"]))
+            return str(best["slug"]), dict(best.get("hyperparameters") or {})
+        msg = f"No FID runs recorded for {model_type!r} in results file"
+        raise ValueError(msg)
+    msg = f"Model {model_type!r} not found in FID results"
+    raise ValueError(msg)
