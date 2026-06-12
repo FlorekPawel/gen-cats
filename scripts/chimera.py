@@ -1,4 +1,4 @@
-"""Chimera experiment: train SN-GAN on mixed Dogs vs Cats dataset (all project seeds)."""
+"""Chimera experiment: train WGAN-GP on mixed Dogs vs Cats dataset (all project seeds)."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def run_chimera(
     device: str,
     max_epochs: int,
 ) -> dict[str, Any]:
-    """Train chimera SN-GAN for one seed."""
+    """Train chimera WGAN-GP for one seed."""
     npy_path = Path(data_dir) / "dogcat_train.npy"
     ds = CatFaceDataset(npy_path, augment=True)
     n_val = max(1, int(len(ds) * 0.1))
@@ -47,7 +47,7 @@ def run_chimera(
     val_loader: DataLoader[torch.Tensor] = DataLoader(val_subset, batch_size=64, shuffle=False)
 
     cfg = TrainConfig(
-        model_type="sn_gan",
+        model_type="wgan_gp",
         seed=seed,
         device=device,
         max_epochs=max_epochs,
@@ -57,13 +57,13 @@ def run_chimera(
     )
 
     trainer = create_trainer(cfg)
-    logger.info("Chimera SN-GAN seed=%d on %d dog+cat images", seed, len(ds))
+    logger.info("Chimera WGAN-GP seed=%d on %d dog+cat images", seed, len(ds))
     results = trainer.fit(train_loader, val_loader)
     return {"seed": seed, **results}
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Chimera: SN-GAN on dogs+cats")
+    parser = argparse.ArgumentParser(description="Chimera: WGAN-GP on dogs+cats")
     parser.add_argument("--data-dir", type=str, default="data/processed")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints")
     parser.add_argument("--device", type=str, default="mps")

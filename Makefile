@@ -27,7 +27,7 @@ help:
 	@echo "  make eval             - FID + interpolations (x3 seeds each)"
 	@echo "  make eval-fid         - FID for all 7 model families (x3 seeds)"
 	@echo "  make interpolate      - interpolation strips only"
-	@echo "  make chimera          - dog+cat chimera only (needs process-dogcat)"
+	@echo "  make chimera          - WGAN-GP on dog+cat mix (needs process-dogcat)"
 	@echo "  make mlflow           - start local MLflow UI"
 	@echo "  make test             - run tests"
 	@echo "  make lint             - run lint checks"
