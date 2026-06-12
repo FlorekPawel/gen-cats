@@ -80,11 +80,28 @@ def main() -> None:
 
     for result in results:
         logger.info(
-            "%s: FID = %.2f +/- %.2f",
+            "%s: %d grid run(s), pooled FID = %.2f +/- %.2f",
             result["model"],
+            result.get("n_runs", 0),
             result["mean_fid"],
             result["std_fid"],
         )
+        best = result.get("best_run")
+        if best:
+            logger.info(
+                "  best cell slug=%s mean_fid=%.2f %s",
+                best["slug"],
+                best["mean_fid"],
+                best.get("hyperparameters", {}),
+            )
+        for run in result.get("runs", []):
+            logger.info(
+                "  slug=%s mean=%.2f +/- %.2f %s",
+                run["slug"],
+                run["mean_fid"],
+                run["std_fid"],
+                run.get("hyperparameters", {}),
+            )
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

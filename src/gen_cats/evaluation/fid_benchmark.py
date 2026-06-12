@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import fields
 from typing import Any
 
@@ -10,7 +11,11 @@ import numpy as np
 import torch
 
 from gen_cats.config import TrainConfig
-from gen_cats.evaluation.checkpoint_resolve import load_trainer_for_eval
+from gen_cats.evaluation.checkpoint_resolve import (
+    discover_checkpoints,
+    load_trainer_from_checkpoint,
+    run_hyperparameters,
+)
 from gen_cats.evaluation.fid import compute_fid_from_loaders
 from gen_cats.factory import create_dataloaders
 
@@ -65,6 +70,12 @@ def build_eval_config(
     return cfg
 
 
+def _matches_vqvae_filter(cfg: TrainConfig, vqvae_overrides: dict[str, Any] | None) -> bool:
+    if not vqvae_overrides or cfg.model_type not in VQVAE_LINKED_MODELS:
+        return True
+    return all(getattr(cfg, key, None) == value for key, value in vqvae_overrides.items())
+
+
 def evaluate_model(
     model_type: str,
     seeds: list[int],
@@ -76,58 +87,110 @@ def evaluate_model(
     n_samples: int = 1000,
     vqvae_overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Compute FID for a model type across seeds; return summary dict."""
-    per_seed: dict[str, float] = {}
+    """Compute FID for every sweep grid cell and seed with a ``best`` checkpoint."""
+    all_paths = discover_checkpoints(
+        checkpoint_dir,
+        model_type,
+        seeds,
+        run_name=run_name,
+        tag="best",
+    )
 
-    for seed in seeds:
-        cfg = build_eval_config(
-            model_type,
-            seed,
-            device=device,
-            data_dir=data_dir,
-            checkpoint_dir=checkpoint_dir,
-            run_name=run_name,
-            vqvae_overrides=vqvae_overrides,
+    by_slug: dict[str, list[Any]] = defaultdict(list)
+    for path in all_paths:
+        by_slug[path.parent.name].append(path)
+
+    runs: list[dict[str, Any]] = []
+
+    for slug in sorted(by_slug):
+        per_seed: dict[str, float] = {}
+        hyperparameters: dict[str, Any] | None = None
+
+        for ckpt_path in sorted(by_slug[slug], key=lambda p: p.name):
+            seed = int(ckpt_path.stem.rsplit("_seed", 1)[1])
+            seed_cfg = build_eval_config(
+                model_type,
+                seed,
+                device=device,
+                data_dir=data_dir,
+                checkpoint_dir=checkpoint_dir,
+                run_name=run_name,
+                vqvae_overrides=vqvae_overrides,
+            )
+
+            try:
+                trainer, _ = load_trainer_from_checkpoint(ckpt_path, seed_cfg)
+                if not _matches_vqvae_filter(trainer.config, vqvae_overrides):
+                    logger.info(
+                        "Skipping %s slug=%s seed=%d (VQ filter)",
+                        model_type,
+                        slug,
+                        seed,
+                    )
+                    continue
+
+                if hyperparameters is None:
+                    hyperparameters = run_hyperparameters(trainer.config)
+
+                _train_loader, val_loader = create_dataloaders(trainer.config)
+
+                def gen_fn(n: int, _t: object = trainer) -> torch.Tensor:
+                    return _t.generate_samples(n).cpu()  # type: ignore[attr-defined]
+
+                fid = compute_fid_from_loaders(
+                    val_loader,
+                    gen_fn,
+                    n_samples=n_samples,
+                    device=torch.device(device),
+                )
+                per_seed[str(seed)] = fid
+                logger.info("FID %s slug=%s seed=%d: %.2f", model_type, slug, seed, fid)
+
+            except Exception:
+                logger.exception(
+                    "Failed to evaluate %s slug=%s seed=%d",
+                    model_type,
+                    slug,
+                    seed,
+                )
+
+        if not per_seed:
+            continue
+
+        scores = list(per_seed.values())
+        runs.append(
+            {
+                "slug": slug,
+                "hyperparameters": hyperparameters or {},
+                "per_seed": per_seed,
+                "mean_fid": float(np.mean(scores)),
+                "std_fid": float(np.std(scores)),
+            }
         )
 
-        try:
-            loaded = load_trainer_for_eval(cfg)
-            if loaded is None:
-                logger.warning("No best checkpoint for %s seed=%d, skipping", model_type, seed)
-                continue
-            trainer, _ = loaded
-            _train_loader, val_loader = create_dataloaders(trainer.config)
-
-            def gen_fn(n: int, _t: object = trainer) -> torch.Tensor:
-                return _t.generate_samples(n).cpu()  # type: ignore[attr-defined]
-
-            fid = compute_fid_from_loaders(
-                val_loader,
-                gen_fn,
-                n_samples=n_samples,
-                device=torch.device(cfg.device),
-            )
-            per_seed[str(seed)] = fid
-            logger.info("FID %s seed=%d: %.2f", model_type, seed, fid)
-
-        except Exception:
-            logger.exception("Failed to evaluate %s seed=%d", model_type, seed)
-
-    if not per_seed:
+    if not runs:
         return {
             "model": model_type,
+            "n_runs": 0,
+            "runs": [],
             "mean_fid": float("nan"),
             "std_fid": float("nan"),
         }
 
-    fid_scores = list(per_seed.values())
+    best = min(runs, key=lambda r: r["mean_fid"])
+    all_scores = [fid for r in runs for fid in r["per_seed"].values()]
+
     result: dict[str, Any] = {
         "model": model_type,
-        "seeds": list(per_seed.keys()),
-        "per_seed": per_seed,
-        "mean_fid": float(np.mean(fid_scores)),
-        "std_fid": float(np.std(fid_scores)),
-        "fid_scores": fid_scores,
+        "n_runs": len(runs),
+        "runs": runs,
+        "best_run": {
+            "slug": best["slug"],
+            "hyperparameters": best["hyperparameters"],
+            "mean_fid": best["mean_fid"],
+        },
+        "mean_fid": float(np.mean(all_scores)),
+        "std_fid": float(np.std(all_scores)),
     }
     if model_type == "vqvae":
         result["note"] = "Uses random codebook indices in generate_samples; not a learned prior."
@@ -139,5 +202,5 @@ def evaluate_all(
     seeds: list[int],
     **kwargs: Any,
 ) -> list[dict[str, Any]]:
-    """Run FID for each model type."""
+    """Run FID for each model type (all grid cells per type)."""
     return [evaluate_model(mt, seeds, **kwargs) for mt in model_types]
