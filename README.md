@@ -59,7 +59,7 @@ make eval                            # FID + interpolations (x3 seeds)
 make mlflow                          # http://127.0.0.1:5050
 ```
 
-Chimera: `make download-dogcat && make process-dogcat && make chimera`
+Chimera (64×64 WGAN-GP): `make download-dogcat && make process-dogcat-chimera && make chimera`
 
 `make help` for individual targets.
 

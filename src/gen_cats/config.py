@@ -51,6 +51,7 @@ class TrainConfig:
     feature_map_size: int = 16
 
     # GAN
+    image_size: int = 128
     n_critic: int = 5
     gp_lambda: float = 10.0
     use_spectral_norm: bool = False
@@ -158,6 +159,7 @@ def checkpoint_run_slug(cfg: TrainConfig) -> str:
 
 
 SEEDS: list[int] = [42, 0, 3407]
+CHIMERA_IMAGE_SIZE: int = 64
 
 GRIDS: dict[str, dict[str, list[Any]]] = {
     "beta_vae": {

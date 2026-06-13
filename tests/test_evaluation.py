@@ -120,9 +120,28 @@ class TestDogsVsCatsDataset:
         ds = DogsVsCatsDataset(tmp_path)
         assert len(ds) == 10
         sample = ds[0]
-        assert sample.shape == (3, 128, 128)
+        assert sample.shape == (3, 64, 64)
         assert sample.min() >= -1.0
         assert sample.max() <= 1.0
+
+    def test_image_size_128(self, tmp_path: Path) -> None:
+        for i in range(3):
+            img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+            from PIL import Image
+
+            Image.fromarray(img).save(tmp_path / f"cat.{i}.jpg")
+            Image.fromarray(img).save(tmp_path / f"dog.{i}.jpg")
+
+        from gen_cats.data.dogcat_dataset import DogsVsCatsDataset
+
+        ds = DogsVsCatsDataset(tmp_path, image_size=128)
+        assert ds[0].shape == (3, 128, 128)
+
+    def test_dogcat_npy_filename(self) -> None:
+        from gen_cats.data.dogcat_dataset import dogcat_npy_filename
+
+        assert dogcat_npy_filename(64) == "dogcat_train_64.npy"
+        assert dogcat_npy_filename(128) == "dogcat_train.npy"
 
     def test_max_per_class(self, tmp_path: Path) -> None:
         for i in range(10):

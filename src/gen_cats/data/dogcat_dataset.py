@@ -1,4 +1,4 @@
-"""Dogs vs Cats mixed dataset for chimera experiment."""
+"""Dogs vs Cats mixed dataset for chimera experiment (64x64 by default)."""
 
 from __future__ import annotations
 
@@ -12,17 +12,31 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
 
+from gen_cats.config import CHIMERA_IMAGE_SIZE
+
 logger = logging.getLogger(__name__)
 
-IMG_SIZE = 128
+# Legacy 128x128 filename kept for backwards compatibility when size=128.
+DOG_CAT_NPY_STEM = "dogcat_train"
 
 
-def default_transform() -> transforms.Compose:
-    """Resize shortest side to default size, then center-crop to default size."""
+def dogcat_npy_filename(size: int = CHIMERA_IMAGE_SIZE) -> str:
+    """Processed dog+cat array filename for a given square resolution."""
+    if size == 128:
+        return f"{DOG_CAT_NPY_STEM}.npy"
+    return f"{DOG_CAT_NPY_STEM}_{size}.npy"
+
+
+def dogcat_npy_path(data_dir: str | Path, size: int = CHIMERA_IMAGE_SIZE) -> Path:
+    return Path(data_dir) / dogcat_npy_filename(size)
+
+
+def default_transform(image_size: int = CHIMERA_IMAGE_SIZE) -> transforms.Compose:
+    """Resize shortest side, center-crop, normalize to [-1, 1]."""
     return transforms.Compose(
         [
-            transforms.Resize(IMG_SIZE),
-            transforms.CenterCrop(IMG_SIZE),
+            transforms.Resize(image_size),
+            transforms.CenterCrop(image_size),
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ]
@@ -41,9 +55,11 @@ class DogsVsCatsDataset(Dataset[torch.Tensor]):
         data_dir: str | Path,
         transform: transforms.Compose | None = None,
         max_per_class: int | None = None,
+        image_size: int = CHIMERA_IMAGE_SIZE,
     ) -> None:
         self.data_dir = Path(data_dir)
-        self.transform = transform or default_transform()
+        self.image_size = image_size
+        self.transform = transform or default_transform(image_size)
 
         self.image_paths: list[Path] = []
         self.labels: list[int] = []
@@ -63,10 +79,12 @@ class DogsVsCatsDataset(Dataset[torch.Tensor]):
             self.labels.append(1)
 
         logger.info(
-            "DogsVsCats: %d cats, %d dogs from %s",
+            "DogsVsCats: %d cats, %d dogs from %s (%dx%d)",
             len(cat_paths),
             len(dog_paths),
             self.data_dir,
+            image_size,
+            image_size,
         )
 
     def __len__(self) -> int:
@@ -80,14 +98,14 @@ class DogsVsCatsDataset(Dataset[torch.Tensor]):
 def process_dogcat_dataset(
     raw_dir: Path,
     output_dir: Path,
-    size: int = IMG_SIZE,
+    size: int = CHIMERA_IMAGE_SIZE,
     max_per_class: int | None = None,
     seed: int = 42,
-) -> dict[str, int]:
-    """Process dogs+cats images → .npy for fast loading."""
+) -> dict[str, Any]:
+    """Process dogs+cats images → ``dogcat_train_{size}.npy`` (or ``dogcat_train.npy`` at 128)."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    ds = DogsVsCatsDataset(raw_dir, max_per_class=max_per_class)
+    ds = DogsVsCatsDataset(raw_dir, max_per_class=max_per_class, image_size=size)
     rng = np.random.default_rng(seed)
     indices = rng.permutation(len(ds))
 
@@ -101,12 +119,13 @@ def process_dogcat_dataset(
     from tqdm import tqdm
 
     images: list[Any] = []
-    for idx in tqdm(indices, desc="Processing dogs+cats", unit="img"):
+    for idx in tqdm(indices, desc=f"Processing dogs+cats {size}x{size}", unit="img"):
         img = Image.open(ds.image_paths[idx]).convert("RGB")
         img = resize_crop(img)
         images.append(np.array(img, dtype=np.uint8))
 
     arr = np.stack(images)
-    np.save(output_dir / "dogcat_train.npy", arr)
-    logger.info("Saved %d dog+cat images → %s", len(arr), output_dir)
-    return {"total": len(arr)}
+    out_path = output_dir / dogcat_npy_filename(size)
+    np.save(out_path, arr)
+    logger.info("Saved %d dog+cat images (%dx%d) → %s", len(arr), size, size, out_path)
+    return {"total": len(arr), "size": size, "path": str(out_path)}

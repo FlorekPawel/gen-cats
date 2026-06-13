@@ -1,18 +1,18 @@
-"""Chimera experiment: train WGAN-GP on mixed Dogs vs Cats dataset (all project seeds)."""
+"""Chimera experiment: train 64x64 WGAN-GP on mixed Dogs vs Cats (all project seeds)."""
 
 from __future__ import annotations
 
 import argparse
 import logging
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from gen_cats.config import SEEDS, TrainConfig
+from gen_cats.config import CHIMERA_IMAGE_SIZE, SEEDS, TrainConfig
 from gen_cats.data.cat_dataset import CatFaceDataset
+from gen_cats.data.dogcat_dataset import dogcat_npy_path
 from gen_cats.factory import create_trainer
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -26,10 +26,25 @@ def run_chimera(
     checkpoint_dir: str,
     device: str,
     max_epochs: int,
+    image_size: int = CHIMERA_IMAGE_SIZE,
 ) -> dict[str, Any]:
-    """Train chimera WGAN-GP for one seed."""
-    npy_path = Path(data_dir) / "dogcat_train.npy"
+    """Train chimera WGAN-GP at ``image_size`` (default 64) for one seed."""
+    npy_path = dogcat_npy_path(data_dir, image_size)
+    if not npy_path.is_file():
+        msg = (
+            f"{npy_path} not found. Run: make process-dogcat-chimera "
+            f"(or process_data.py --dataset dogcat --size {image_size})"
+        )
+        raise FileNotFoundError(msg)
+
     ds = CatFaceDataset(npy_path, augment=True)
+    if ds.data.shape[1] != image_size or ds.data.shape[2] != image_size:
+        msg = (
+            f"Expected {image_size}x{image_size} images in {npy_path}, "
+            f"got {ds.data.shape[1]}x{ds.data.shape[2]}"
+        )
+        raise ValueError(msg)
+
     n_val = max(1, int(len(ds) * 0.1))
     n_train = len(ds) - n_val
 
@@ -54,20 +69,35 @@ def run_chimera(
         checkpoint_dir=checkpoint_dir + "/chimera",
         experiment_name="chimera-dogcat",
         batch_size=64,
+        image_size=image_size,
+        run_name=f"chimera_{image_size}",
     )
 
     trainer = create_trainer(cfg)
-    logger.info("Chimera WGAN-GP seed=%d on %d dog+cat images", seed, len(ds))
+    logger.info(
+        "Chimera WGAN-GP seed=%d on %d dog+cat images at %dx%d",
+        seed,
+        len(ds),
+        image_size,
+        image_size,
+    )
     results = trainer.fit(train_loader, val_loader)
     return {"seed": seed, **results}
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Chimera: WGAN-GP on dogs+cats")
+    parser = argparse.ArgumentParser(description="Chimera: 64x64 WGAN-GP on dogs+cats")
     parser.add_argument("--data-dir", type=str, default="data/processed")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints")
     parser.add_argument("--device", type=str, default="mps")
     parser.add_argument("--max-epochs", type=int, default=100)
+    parser.add_argument(
+        "--image-size",
+        type=int,
+        default=CHIMERA_IMAGE_SIZE,
+        choices=[64, 128],
+        help="must match processed dogcat .npy (default: 64)",
+    )
     parser.add_argument(
         "--seed",
         type=int,
@@ -75,11 +105,6 @@ def main() -> None:
         help="Single seed only (default: all SEEDS)",
     )
     args = parser.parse_args()
-
-    npy_path = Path(args.data_dir) / "dogcat_train.npy"
-    if not npy_path.exists():
-        logger.error("dogcat_train.npy not found. Run: make process-dogcat first.")
-        return
 
     seeds = [args.seed] if args.seed is not None else SEEDS
     all_results: list[dict[str, Any]] = []
@@ -92,6 +117,7 @@ def main() -> None:
                 checkpoint_dir=args.checkpoint_dir,
                 device=args.device,
                 max_epochs=args.max_epochs,
+                image_size=args.image_size,
             )
             all_results.append(result)
             logger.info("Chimera seed=%d complete: %s", seed, result)

@@ -188,6 +188,12 @@ class TestGenerator:
         out = g(z)
         assert out.shape == (B, 3, 128, 128)
 
+    def test_output_shape_64(self) -> None:
+        g = Generator(latent_dim=128, image_size=64)
+        z = torch.randn(B, 128)
+        out = g(z)
+        assert out.shape == (B, 3, 64, 64)
+
     def test_output_range(self) -> None:
         g = Generator(latent_dim=64)
         z = torch.randn(B, 64)
@@ -209,6 +215,12 @@ class TestDiscriminator:
         out = d(x)
         assert out.shape == (B,)
 
+    def test_output_shape_64(self) -> None:
+        d = Discriminator(image_size=64)
+        x = torch.randn(B, 3, 64, 64)
+        out = d(x)
+        assert out.shape == (B,)
+
     def test_spectral_norm(self) -> None:
         d = Discriminator(use_spectral_norm=True)
         x = torch.randn(B, 3, 128, 128)
@@ -219,6 +231,14 @@ class TestDiscriminator:
         d = Discriminator()
         real = torch.randn(B, 3, 128, 128, requires_grad=True)
         fake = torch.randn(B, 3, 128, 128)
+        gp = compute_gradient_penalty(d, real, fake, torch.device(DEVICE))
+        assert gp.dim() == 0
+        assert gp.item() >= 0
+
+    def test_gradient_penalty_64(self) -> None:
+        d = Discriminator(image_size=64)
+        real = torch.randn(B, 3, 64, 64, requires_grad=True)
+        fake = torch.randn(B, 3, 64, 64)
         gp = compute_gradient_penalty(d, real, fake, torch.device(DEVICE))
         assert gp.dim() == 0
         assert gp.item() >= 0
@@ -242,6 +262,31 @@ class TestGANTrainer:
         train_loader, val_loader = _dummy_loaders()
         results = trainer.fit(train_loader, val_loader)
         assert results["final_epoch"] == 2
+
+    @patch("gen_cats.training.base_trainer.mlflow")
+    def test_chimera_64_train(self, _mock_mlflow: Any, tmp_path: Any) -> None:
+        cfg = TrainConfig(
+            model_type="wgan_gp",
+            device=DEVICE,
+            max_epochs=2,
+            latent_dim=64,
+            image_size=64,
+            n_critic=2,
+            batch_size=B,
+            checkpoint_dir=str(tmp_path),
+            patience=50,
+            sample_interval=100,
+            run_name="chimera_64",
+        )
+        trainer = GANTrainer(cfg)
+        data = torch.randn(16, 3, 64, 64)
+        ds = TensorDataset(data)
+        train_loader = DataLoader(ds, batch_size=B, shuffle=True)
+        val_loader = DataLoader(ds, batch_size=B, shuffle=False)
+        results = trainer.fit(train_loader, val_loader)
+        assert results["final_epoch"] == 2
+        samples = trainer.generate_samples(4)
+        assert samples.shape == (4, 3, 64, 64)
 
     @patch("gen_cats.training.base_trainer.mlflow")
     def test_sn_gan_train(self, _mock_mlflow: Any, tmp_path: Any) -> None:

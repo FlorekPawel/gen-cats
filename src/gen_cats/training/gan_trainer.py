@@ -47,8 +47,12 @@ class GANTrainer(BaseTrainer):
         self.generator = Generator(
             latent_dim=self.config.latent_dim,
             norm=g_norm,
+            image_size=self.config.image_size,
         ).to(self.device)
-        self.discriminator = Discriminator(use_spectral_norm=self._is_sn_gan).to(self.device)
+        self.discriminator = Discriminator(
+            use_spectral_norm=self._is_sn_gan,
+            image_size=self.config.image_size,
+        ).to(self.device)
 
     def build_optimizers(self) -> None:
         lr_g = self.config.lr_g or self.config.lr

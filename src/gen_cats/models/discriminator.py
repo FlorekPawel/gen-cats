@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import torch
 import torch.nn as nn
+
+from gen_cats.models.generator import _validate_image_size
 
 
 def _maybe_sn(layer: nn.Module, use_sn: bool) -> nn.Module:
@@ -15,36 +18,45 @@ def _maybe_sn(layer: nn.Module, use_sn: bool) -> nn.Module:
     return layer
 
 
+def _discriminator_channel_schedule(base_ch: int, image_size: int) -> list[tuple[int, int]]:
+    """Conv channel pairs for each stride-2 downsample (excluding final 4x4 -> 1)."""
+    _validate_image_size(image_size)
+    n_down = int(math.log2(image_size)) - 2
+    widths = [base_ch, base_ch * 2, base_ch * 4, base_ch * 8, base_ch * 8]
+    pairs: list[tuple[int, int]] = [(3, widths[0])]
+    for i in range(n_down - 1):
+        pairs.append((widths[i], widths[i + 1]))
+    return pairs
+
+
 class Discriminator(nn.Module):
-    """Conv discriminator: (B, 3, 128, 128) -> (B, 1).
+    """Conv discriminator: (B, 3, H, H) -> (B, 1) for H in {64, 128}.
 
     For WGAN-GP: no spectral norm, output is unbounded (no sigmoid).
     For SN-GAN: spectral norm on all conv+linear layers.
     """
 
-    def __init__(self, base_ch: int = 64, use_spectral_norm: bool = False) -> None:
+    def __init__(
+        self,
+        base_ch: int = 64,
+        use_spectral_norm: bool = False,
+        image_size: int = 128,
+    ) -> None:
         super().__init__()
+        _validate_image_size(image_size)
+        self.image_size = image_size
         sn = use_spectral_norm
 
-        self.net = nn.Sequential(
-            # 128 -> 64
-            _maybe_sn(nn.Conv2d(3, base_ch, 4, 2, 1, bias=False), sn),
-            nn.LeakyReLU(0.2, inplace=True),
-            # 64 -> 32
-            _maybe_sn(nn.Conv2d(base_ch, base_ch * 2, 4, 2, 1, bias=False), sn),
-            nn.LeakyReLU(0.2, inplace=True),
-            # 32 -> 16
-            _maybe_sn(nn.Conv2d(base_ch * 2, base_ch * 4, 4, 2, 1, bias=False), sn),
-            nn.LeakyReLU(0.2, inplace=True),
-            # 16 -> 8
-            _maybe_sn(nn.Conv2d(base_ch * 4, base_ch * 8, 4, 2, 1, bias=False), sn),
-            nn.LeakyReLU(0.2, inplace=True),
-            # 8 -> 4
-            _maybe_sn(nn.Conv2d(base_ch * 8, base_ch * 8, 4, 2, 1, bias=False), sn),
-            nn.LeakyReLU(0.2, inplace=True),
-            # 4 -> 1
-            _maybe_sn(nn.Conv2d(base_ch * 8, 1, 4, 1, 0, bias=False), sn),
-        )
+        layers: list[nn.Module] = []
+        for in_ch, out_ch in _discriminator_channel_schedule(base_ch, image_size):
+            layers.extend(
+                [
+                    _maybe_sn(nn.Conv2d(in_ch, out_ch, 4, 2, 1, bias=False), sn),
+                    nn.LeakyReLU(0.2, inplace=True),
+                ]
+            )
+        layers.append(_maybe_sn(nn.Conv2d(base_ch * 8, 1, 4, 1, 0, bias=False), sn))
+        self.net = nn.Sequential(*layers)
         self._init_weights()
 
     def _init_weights(self) -> None:

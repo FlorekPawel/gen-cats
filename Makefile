@@ -1,7 +1,7 @@
 PYTHON := uv run python
 MLFLOW_PORT := 5050
 
-.PHONY: help setup download-data download-dogcat process-data process-dogcat \
+.PHONY: help setup download-data download-dogcat process-data process-dogcat process-dogcat-chimera \
         train-vae train-gan train-dm train-pixelcnn pixelcnn-experiment \
         select-vqvae-priors sweep-vae sweep-gan sweep-dm run-all \
         eval eval-fid interpolate chimera \
@@ -13,7 +13,8 @@ help:
 	@echo "  make download-data    - download Cat Dataset from Kaggle"
 	@echo "  make download-dogcat  - download Dogs vs Cats from Kaggle"
 	@echo "  make process-data     - process cat images into .npy files"
-	@echo "  make process-dogcat   - process dogs+cats images into .npy"
+	@echo "  make process-dogcat   - process dogs+cats at 128x128 (legacy)"
+	@echo "  make process-dogcat-chimera - process dogs+cats at 64x64 for chimera"
 	@echo "  make train-vae        - train VAE model (MODEL=beta_vae|vqvae)"
 	@echo "  make train-gan        - train GAN model (MODEL=wgan_gp|sn_gan)"
 	@echo "  make train-dm         - train diffusion model (MODEL=ddim|tiny_ldm)"
@@ -27,7 +28,7 @@ help:
 	@echo "  make eval             - FID + interpolations (x3 seeds each)"
 	@echo "  make eval-fid         - FID for all 7 model families (x3 seeds)"
 	@echo "  make interpolate      - interpolation (best FID cell from results/fid_scores.json)"
-	@echo "  make chimera          - WGAN-GP on dog+cat mix (needs process-dogcat)"
+	@echo "  make chimera          - 64x64 WGAN-GP on dog+cat mix (needs process-dogcat-chimera)"
 	@echo "  make mlflow           - start local MLflow UI"
 	@echo "  make test             - run tests"
 	@echo "  make lint             - run lint checks"
@@ -52,7 +53,10 @@ process-data:
 	$(PYTHON) scripts/process_data.py --dataset cats
 
 process-dogcat:
-	$(PYTHON) scripts/process_data.py --dataset dogcat
+	$(PYTHON) scripts/process_data.py --dataset dogcat --size 128
+
+process-dogcat-chimera:
+	$(PYTHON) scripts/process_data.py --dataset dogcat --size 64
 
 # ─── Training (single model) ─────────────────────────────────
 train-vae:
