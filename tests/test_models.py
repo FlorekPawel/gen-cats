@@ -276,7 +276,7 @@ class TestGANTrainer:
             checkpoint_dir=str(tmp_path),
             patience=50,
             sample_interval=100,
-            run_name="chimera_64",
+            run_name="chimera_64_seed42",
         )
         trainer = GANTrainer(cfg)
         data = torch.randn(16, 3, 64, 64)

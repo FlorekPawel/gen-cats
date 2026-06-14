@@ -70,7 +70,7 @@ def run_chimera(
         experiment_name="chimera-dogcat",
         batch_size=64,
         image_size=image_size,
-        run_name=f"chimera_{image_size}",
+        run_name=f"chimera_{image_size}_seed{seed}",
     )
 
     trainer = create_trainer(cfg)

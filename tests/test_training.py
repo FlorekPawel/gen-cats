@@ -65,6 +65,11 @@ class TestCheckpointRunSlug:
         d = TrainConfig(run_name="sweep/run-a")
         assert checkpoint_run_slug(d) == "sweep_run-a"
 
+    def test_chimera_run_names_differ_by_seed(self) -> None:
+        a = TrainConfig(model_type="wgan_gp", run_name="chimera_64_seed42")
+        b = TrainConfig(model_type="wgan_gp", run_name="chimera_64_seed0")
+        assert checkpoint_run_slug(a) != checkpoint_run_slug(b)
+
 
 class TestConfigGrid:
     def test_grid_expansion(self) -> None:
