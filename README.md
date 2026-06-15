@@ -1,93 +1,149 @@
-# Gen-Cats: Generative Models for Cat Image Synthesis
+# gen-cats
 
-Academic project comparing **VAE**, **GAN** and **diffusion** for generating 128×128 cat face images.
+Comparative study of variational, adversarial, and diffusion models for unconditional cat face synthesis at 128×128. Full report available in [`report/report.pdf`](report/report.pdf); code and instructions below.
 
-Run `make help` for all targets.
+**Dataset:** [Kaggle Cat Dataset](https://www.kaggle.com/datasets/crawford/cat-dataset) — faces cropped from `.cat` landmark annotations, resized with Lanczos, normalized to `[-1, 1]`.
 
-## Architecture
+## Requirements
 
-```
-src/gen_cats/
-├── config.py              # TrainConfig dataclass + grid search helpers
-├── factory.py             # Model / optimizer / dataloader / trainer factories
-├── data/                  # CatDataset, .cat parsing, face crop, .npy I/O
-├── models/                # β-VAE, VQ-VAE, GANs, U-Net/DDIM, PixelCNN, checkpoint loaders
-├── training/              # BaseTrainer + VAE / GAN / DM / PixelCNN trainers
-└── evaluation/            # FID, latent interpolation
-scripts/                   # invoked by Makefile targets
-```
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/)
+- Kaggle API credentials (`KAGGLE_USERNAME`, `KAGGLE_KEY`)
 
-**Design patterns:** Factory (model init), Template Method (`BaseTrainer` → `train_step`), Strategy (per-family losses). Hyperparameters live in `TrainConfig`; sweeps iterate grids × seeds via `ExperimentRunner`.
-
-## Models
-
-| Family | Model | Role | Grid / notes |
-|--------|-------|------|----------------|
-| VAE | β-VAE | Continuous latent | `latent_dim` ∈ {64, 128}, `beta` ∈ {1.0, 4.0} |
-| VAE | VQ-VAE-1 | Discrete codes + decoder | codebook ∈ {512, 1024}, map ∈ {16×16, 8×8}, recon ∈ {L1, L2} |
-| GAN | WGAN-GP | Adversarial | `n_critic` ∈ {3, 5}, batch, symmetric vs TTUR LR |
-| GAN | SN-GAN | Adversarial + spectral norm | batch, LR, optional D augmentation |
-| DM | DDIM | Pixel-space diffusion (U-Net → **8×8** bottleneck, EMA val/sample) | schedule, `base_channels`, `ddim_steps` grid, EMA |
-| DM | Tiny LDM | Diffusion on **continuous** VQ encoder latents (quantize at decode) | Auto VQ manifest, val `latent_scale`, shallow U-Net on 16×16 grid, EMA |
-| Prior | **PixelCNN** | AR prior over VQ **code indices** | Same VQ resolution as Tiny LDM; `max_epochs` via CLI (default 1000 + early stop) |
-
-After `make sweep-vae`, run `make select-vqvae-priors` (or rely on the sweep’s auto-write) to build `checkpoints/vqvae/prior_best_by_seed.json`: for each seed, the VQ grid cell with the lowest validation `recon` is used for PixelCNN and Tiny LDM. Pin a cell with `NUM_EMBEDDINGS` / `FEATURE_MAP_SIZE` / `RECON_LOSS` or `--vqvae-selection slug`.
-
-Grid sweeps run each config × **3 seeds**. Training uses early stopping (`patience=15`, `min_epochs=20`) with a high epoch cap (`max_epochs=1000`). Checkpoints are namespaced per run: `checkpoints/<model_type>/<slug>/best_seed{seed}.pt`.
-
-### Unconditional sampling (what each model uses at generation time)
-
-| Model | Sampling |
-|-------|----------|
-| β-VAE | `z ~ N(0, I)` → decoder |
-| VQ-VAE (trainer grids only) | Random codebook indices (debug / not a learned prior) |
-| **PixelCNN** | Autoregressive code indices on the VQ grid → `decode_indices` |
-| **Tiny LDM** | DDIM in latent space → frozen VQ decoder |
-| GAN | `z ~ N(0, I)` → generator |
-
-For fair VQ-VAE generation comparisons, use **PixelCNN** or **Tiny LDM**, not the random-index path in `VAETrainer.generate_samples`.
-
-## Quick Start
-
-```bash
-make setup && cp .env.example .env   # KAGGLE_USERNAME, KAGGLE_KEY
-
-make download-data && make process-data
-make run-all                         # sweeps + pixelcnn-experiment
-
-make eval                            # FID + interpolations (x3 seeds)
-make mlflow                          # http://127.0.0.1:5050
-```
-
-Chimera (64×64 WGAN-GP): `make download-dogcat && make process-dogcat-chimera && make chimera`
-
-`make help` for individual targets.
-
-## Installation
-
-Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+## Setup
 
 ```bash
 git clone <repo-url> && cd gen-cats
 make setup
-cp .env.example .env
+cp .env.example .env   # fill in Kaggle credentials
 ```
 
-## Project structure
+All commands below assume you are in the repo root. Run `make help` for the full target list.
 
-| Path | Description |
-|------|-------------|
-| `Makefile` | Primary CLI (`make help`) |
-| `scripts/` | Training, sweeps, FID, interpolation, chimera, prior comparison |
-| `data/raw/` | Kaggle downloads (gitignored) |
-| `data/processed/` | Cropped 128×128 `.npy` tensors (gitignored) |
-| `checkpoints/` | Per-model, per-run checkpoints (gitignored) |
-| `results/` | FID outputs, prior comparison, etc. |
-| `report/` | LaTeX report |
+## Experiment workflow
 
-## Reproducibility
+Cat-face experiments follow a fixed order. Training is long; `make mlflow` (port 5050) is useful for monitoring.
 
-Each run resets `random`, `numpy`, and `torch` seeds. MLflow logs hyperparameters, train/val metrics, periodic 4×4 sample grids during training, and a final `samples_best.png` from the **best** checkpoint (early stop or max epochs). Finished runs (including early-stopped) are marked `finished` in checkpoints and are **not** resumed on restart.
+```bash
+# 1. Data
+make download-data
+make process-data          # → data/processed/train.npy, val.npy
+
+# 2. Training (132 grid jobs + 3 PixelCNN + 3 fixed Tiny LDM for prior comparison)
+make run-all
+
+# 3. Evaluation
+make eval                  # FID → results/fid_scores.json; interpolations → results/interpolations/
+make additional-samples    # sample grids from best checkpoints
+
+# 4. Report figures (re-run after process-data for real crops)
+make report-figures        # → notebooks/plots/
+```
+
+**Chimera extension** (optional, 64×64 WGAN-GP on mixed dogs and cats):
+
+```bash
+make download-dogcat
+make process-dogcat-chimera
+make chimera               # +3 WGAN-GP runs → checkpoints/chimera/
+```
+
+### Run counts
+
+| Stage | Jobs |
+|-------|-----:|
+| Grid sweeps (VAE, GAN, diffusion families) | 132 |
+| PixelCNN prior (3 seeds, fixed architecture) | 3 |
+| Tiny LDM for prior comparison (fixed: EMA on, 100 DDIM steps) | 3 |
+| Chimera WGAN-GP | 3 |
+| **Total** | **141** |
+
+Each hyperparameter cell is trained with seeds `{42, 0, 3407}`. Early stopping: `patience=15`, `min_epochs=20`, `max_epochs=1000`. Default device is Apple MPS (`TrainConfig.device`).
+
+### Single runs
+
+For debugging one configuration instead of a full sweep:
+
+```bash
+make train-vae MODEL=beta_vae SEED=42
+make train-gan MODEL=wgan_gp SEED=42
+make train-dm MODEL=ddim SEED=42
+make train-pixelcnn SEED=42
+```
+
+Pin a frozen VQ-VAE for PixelCNN or Tiny LDM with `NUM_EMBEDDINGS`, `FEATURE_MAP_SIZE`, and `RECON_LOSS`, or pass `--vqvae-selection slug` via the underlying script.
+
+## Models
+
+Seven generators are compared on the same preprocessed cat faces. Hyperparameter grids are defined in [`src/gen_cats/config.py`](src/gen_cats/config.py) (`GRIDS`).
+
+| Family | Model | What varies in the sweep |
+|--------|-------|--------------------------|
+| VAE | β-VAE | `latent_dim` ∈ {64, 128}, `beta` ∈ {1.0, 4.0} |
+| VAE | VQ-VAE-1 | codebook ∈ {512, 1024}, map ∈ {16², 8²}, recon ∈ {L1, MSE} |
+| GAN | WGAN-GP | `n_critic` ∈ {3, 5}, batch ∈ {64, 128}, symmetric vs TTUR LR |
+| GAN | SN-GAN | batch, LR schedule, optional D-side hflip augmentation |
+| Diffusion | DDIM | schedule, `base_channels`, `ddim_steps`; U-Net bottleneck 8×8; T=1000 |
+| Diffusion | Tiny LDM | same grid as DDIM; denoises continuous VQ encoder latents |
+| Prior | PixelCNN | 128 channels, 10 masked layers (fixed); AR prior over VQ code indices |
+
+**Sampling at evaluation time**
+
+| Model | Generation |
+|-------|------------|
+| β-VAE, GAN | `z ~ N(0, I)` → decoder / generator |
+| DDIM | DDIM in pixel space (EMA weights when enabled) |
+| Tiny LDM | DDIM in latent space → frozen VQ decoder |
+| PixelCNN | autoregressive code indices → `decode_indices` |
+| VQ-VAE alone | random codebook indices (debug only; not a learned prior) |
+
+For VQ-based synthesis, use PixelCNN or Tiny LDM—not the random-index path in `VAETrainer.generate_samples`.
+
+### VQ-VAE prior selection
+
+PixelCNN and Tiny LDM need a frozen VQ-VAE per seed. After `make sweep-vae`, `select-vqvae-priors` (also invoked by `run-all`) writes `checkpoints/vqvae/prior_best_by_seed.json`: for each seed, the grid cell with lowest validation reconstruction loss. `pixelcnn-experiment` then trains PixelCNN on that manifest and, separately, three fixed-config Tiny LDM runs for wall-clock comparison (`results/prior_comparison/`).
+
+## Repository layout
+
+```
+src/gen_cats/
+  config.py          # TrainConfig, GRIDS, SEEDS
+  factory.py           # model / trainer / dataloader construction
+  data/                # parsing, crop, .npy I/O
+  models/              # architectures and checkpoint loading
+  training/            # trainers and ExperimentRunner
+  evaluation/          # FID, interpolation, prior comparison
+scripts/               # CLI entry points (called by Makefile)
+data/raw/              # Kaggle downloads (gitignored)
+data/processed/        # train.npy, val.npy (gitignored)
+checkpoints/           # per-run weights (gitignored)
+results/               # metrics and figures from eval
+report/                # LaTeX source and bibliography
+notebooks/             # EDA; plots consumed by the report
+```
+
+Checkpoints are stored as `checkpoints/<model_type>/<slug>/best_seed{seed}.pt`. Slugs come from `run_name` or a hash of hyperparameters so runs do not overwrite each other.
+
+**Key outputs**
+
+| Path | Contents |
+|------|----------|
+| `results/fid_scores.json` | FID per model family and hyperparameter cell |
+| `results/interpolations/` | β-VAE and WGAN-GP latent interpolation strips |
+| `results/prior_comparison/` | PixelCNN vs Tiny LDM timings and sample grids |
+| `checkpoints/chimera/` | 64×64 mixed-species WGAN-GP |
+| `notebooks/plots/` | Figures for the report (`make report-figures`) |
+
+Finished runs are marked in checkpoint metadata and are not resumed on restart. MLflow logs hyperparameters, train/val curves, periodic sample grids, and a final `samples_best.png` from the best checkpoint.
+
+## Report
+
+```bash
+cd report
+pdflatex report.tex && bibtex report && pdflatex report.tex && pdflatex report.tex
+```
+
+Regenerate figure PNGs after processing data: `make report-figures`.
 
 ## Development
 
@@ -96,3 +152,5 @@ make test
 make lint
 make format
 ```
+
+Pre-commit hooks install with `make setup`.
