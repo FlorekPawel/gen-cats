@@ -1,0 +1,4 @@
+run_dir,seed,sample_image,n_epoch_snapshots
+chimera_64_seed0,0,/Users/pawelp/Desktop/education/pw/deepl/gen-cats/checkpoints/chimera/wgan_gp/chimera_64_seed0/additional_samples.png,10
+chimera_64_seed3407,3407,/Users/pawelp/Desktop/education/pw/deepl/gen-cats/checkpoints/chimera/wgan_gp/chimera_64_seed3407/additional_samples.png,9
+chimera_64_seed42,42,/Users/pawelp/Desktop/education/pw/deepl/gen-cats/checkpoints/chimera/wgan_gp/chimera_64_seed42/additional_samples.png,8

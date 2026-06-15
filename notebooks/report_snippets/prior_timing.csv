@@ -1,0 +1,4 @@
+seed,vqvae_seed,num_embeddings,feature_map_size,recon_loss,n_samples,pixelcnn_checkpoint,tiny_ldm_checkpoint,pixelcnn_seconds,tiny_ldm_seconds,pixelcnn_seconds_per_image,tiny_ldm_seconds_per_image,speedup_ldm_over_pixelcnn
+42,42,512,16,mse,16,checkpoints/pixelcnn/e8b7a925fdaf/best_seed42.pt,checkpoints/tiny_ldm/4968b94b662b/best_seed42.pt,4.161595207871869,0.8302529999054968,0.2600997004919918,0.05189081249409355,5.012442241516213
+0,0,512,16,mse,16,checkpoints/pixelcnn/32a45e7e8ab6/best_seed0.pt,checkpoints/tiny_ldm/77b49ba7c148/best_seed0.pt,4.187360333977267,0.8236870421096683,0.2617100208735792,0.051480440131854266,5.083678775924884
+3407,3407,512,16,mse,16,checkpoints/pixelcnn/099fc9ce2263/best_seed3407.pt,checkpoints/tiny_ldm/e8e3810e09ea/best_seed3407.pt,4.153189666103572,0.7651519579812884,0.25957435413147323,0.04782199737383053,5.427927907367567

@@ -1,0 +1,14 @@
+{
+  "n_images": 2,
+  "files": [
+    "interpolation_beta_vae_seed3407.png",
+    "interpolation_wgan_gp_seed3407.png"
+  ],
+  "models": [
+    "beta_vae",
+    "wgan_gp"
+  ],
+  "seeds": [
+    3407
+  ]
+}
