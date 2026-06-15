@@ -1,6 +1,6 @@
 # gen-cats
 
-Comparative study of variational, adversarial, and diffusion models for unconditional cat face synthesis at 128×128. Full report available in [`report/report.pdf`](report/report.pdf); code and instructions below.
+Comparative study of variational, adversarial, and diffusion models for unconditional cat face synthesis at 128×128. Full write-up: [`report/report.pdf`](report/report.pdf); slides: [`report/presentation.pdf`](report/presentation.pdf).
 
 **Dataset:** [Kaggle Cat Dataset](https://www.kaggle.com/datasets/crawford/cat-dataset) — faces cropped from `.cat` landmark annotations, resized with Lanczos, normalized to `[-1, 1]`.
 
@@ -29,15 +29,19 @@ Cat-face experiments follow a fixed order. Training is long; `make mlflow` (port
 make download-data
 make process-data          # → data/processed/train.npy, val.npy
 
-# 2. Training (132 grid jobs + 3 PixelCNN + 3 fixed Tiny LDM for prior comparison)
+# 2. Training (138 cat-face jobs: 132 grid + 3 PixelCNN + 3 Tiny LDM prior comparison)
 make run-all
 
 # 3. Evaluation
 make eval                  # FID → results/fid_scores.json; interpolations → results/interpolations/
 make additional-samples    # sample grids from best checkpoints
 
-# 4. Report figures (re-run after process-data for real crops)
-make report-figures        # → notebooks/plots/
+# 4. Report figures
+make report-figures        # methodology plots → notebooks/plots/
+uv run python scripts/generate_appendix_figures.py   # appendix panels → notebooks/plots/results/
+
+# 5. Results analysis (needs mlflow.db, checkpoints/, and steps 3–4)
+# Run notebooks/00_results_overview.ipynb through 09_*.ipynb
 ```
 
 **Chimera extension** (optional, 64×64 WGAN-GP on mixed dogs and cats):
@@ -50,13 +54,18 @@ make chimera               # +3 WGAN-GP runs → checkpoints/chimera/
 
 ### Run counts
 
+Cat-face jobs: 44 hyperparameter cells × 3 seeds across six families (132), plus three fixed PixelCNN prior runs and three fixed Tiny LDM runs for prior comparison (138 total). Chimera adds three WGAN-GP runs at 64×64.
+
 | Stage | Jobs |
 |-------|-----:|
 | Grid sweeps (VAE, GAN, diffusion families) | 132 |
 | PixelCNN prior (3 seeds, fixed architecture) | 3 |
 | Tiny LDM for prior comparison (fixed: EMA on, 100 DDIM steps) | 3 |
+| **Cat-face total** | **138** |
 | Chimera WGAN-GP | 3 |
-| **Total** | **141** |
+| **Grand total** | **141** |
+
+MLflow may log more than one record per job when sweeps are restarted; analysis notebooks read the SQLite store at `mlflow.db`.
 
 Each hyperparameter cell is trained with seeds `{42, 0, 3407}`. Early stopping: `patience=15`, `min_epochs=20`, `max_epochs=1000`. Default device is Apple MPS (`TrainConfig.device`).
 
@@ -107,24 +116,42 @@ PixelCNN and Tiny LDM need a frozen VQ-VAE per seed. After `make sweep-vae`, `se
 
 ```
 src/gen_cats/
-  config.py          # TrainConfig, GRIDS, SEEDS
+  config.py            # TrainConfig, GRIDS, SEEDS
   factory.py           # model / trainer / dataloader construction
   data/                # parsing, crop, .npy I/O
   models/              # architectures and checkpoint loading
   training/            # trainers and ExperimentRunner
-  evaluation/          # FID, interpolation, prior comparison
+  evaluation/          # FID, interpolation, prior comparison, report helpers
 scripts/               # CLI entry points (called by Makefile)
 data/raw/              # Kaggle downloads (gitignored)
 data/processed/        # train.npy, val.npy (gitignored)
 checkpoints/           # per-run weights (gitignored)
+mlflow.db              # local MLflow SQLite store (gitignored)
 results/               # metrics and figures from eval
-report/                # LaTeX source and bibliography
-notebooks/             # EDA; plots consumed by the report
+report/                # LaTeX report, Beamer slides, bibliography
+notebooks/             # EDA and results analysis; plots consumed by the report
 ```
 
 Checkpoints are stored as `checkpoints/<model_type>/<slug>/best_seed{seed}.pt`. Slugs come from `run_name` or a hash of hyperparameters so runs do not overwrite each other.
 
-**Results analysis.** Open and run `notebooks/00_results_overview.ipynb` through `09_*.ipynb` (figures → `notebooks/plots/results/`, numeric exports → `notebooks/report_snippets/`).
+### Results analysis
+
+After training and evaluation, run `notebooks/00_results_overview.ipynb` through `09_*.ipynb`. They use [`report_analysis.py`](src/gen_cats/evaluation/report_analysis.py) and [`experiment_artifacts.py`](src/gen_cats/evaluation/experiment_artifacts.py) to load `results/`, `mlflow.db`, and checkpoint sample PNGs.
+
+| Notebook | Topic |
+|----------|-------|
+| `00_results_overview` | Index and export paths |
+| `01_fid_analysis` | FID leaderboard and grid distributions |
+| `02_qualitative_samples` | Best-checkpoint sample grids per family |
+| `03_interpolation` | Latent interpolation strips |
+| `04_prior_comparison` | PixelCNN vs Tiny LDM panels |
+| `05_chimera` | Mixed-species WGAN-GP samples |
+| `06_mlflow_training_summary` | Run counts, duration, early-stop rates |
+| `07_training_curves` | MLflow metric histories |
+| `08_checkpoint_progression` | Epoch sample grids along training |
+| `09_fid_vs_mlflow` | FID vs best validation metric |
+
+Exports: figures → `notebooks/plots/results/`; LaTeX/CSV snippets → `notebooks/report_snippets/`. `notebooks/eda.ipynb` is earlier data exploration only.
 
 **Key outputs**
 
@@ -134,18 +161,22 @@ Checkpoints are stored as `checkpoints/<model_type>/<slug>/best_seed{seed}.pt`. 
 | `results/interpolations/` | β-VAE and WGAN-GP latent interpolation strips |
 | `results/prior_comparison/` | PixelCNN vs Tiny LDM timings and sample grids |
 | `checkpoints/chimera/` | 64×64 mixed-species WGAN-GP |
-| `notebooks/plots/` | Figures for the report (`make report-figures`) |
+| `notebooks/plots/` | Methodology figures (`make report-figures`) and results panels (notebooks / appendix script) |
+| `notebooks/report_snippets/` | Tables and stats `\input{}` by `report/report.tex` |
 
 Finished runs are marked in checkpoint metadata and are not resumed on restart. MLflow logs hyperparameters, train/val curves, periodic sample grids, and a final `samples_best.png` from the best checkpoint.
 
 ## Report
 
 ```bash
-cd report
+# PDF report (from report/)
 pdflatex report.tex && bibtex report && pdflatex report.tex && pdflatex report.tex
+
+# Beamer slides
+pdflatex presentation.tex && pdflatex presentation.tex
 ```
 
-Regenerate figure PNGs after processing data: `make report-figures`.
+Regenerate figures after processing data or re-running eval: `make report-figures`, then `uv run python scripts/generate_appendix_figures.py` if appendix panels changed. Re-run the results notebooks when metrics or MLflow data change.
 
 ## Development
 
@@ -153,6 +184,7 @@ Regenerate figure PNGs after processing data: `make report-figures`.
 make test
 make lint
 make format
+make pre-commit-all   # full hook pass (same as CI)
 ```
 
 Pre-commit hooks install with `make setup`.
