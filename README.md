@@ -124,6 +124,8 @@ notebooks/             # EDA; plots consumed by the report
 
 Checkpoints are stored as `checkpoints/<model_type>/<slug>/best_seed{seed}.pt`. Slugs come from `run_name` or a hash of hyperparameters so runs do not overwrite each other.
 
+**Results analysis.** Open and run `notebooks/00_results_overview.ipynb` through `09_*.ipynb` (figures → `notebooks/plots/results/`, numeric exports → `notebooks/report_snippets/`).
+
 **Key outputs**
 
 | Path | Contents |
