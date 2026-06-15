@@ -1,7 +1,18 @@
 \documentclass[cameraready]{Interspeech}
 \usepackage{float}
+\usepackage{dblfloatfix}
 
-\graphicspath{{../notebooks/plots/}}
+\setcounter{topnumber}{3}
+\setcounter{dbltopnumber}{2}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.85}
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+
+\graphicspath{{../notebooks/plots/}{../notebooks/plots/results/}}
 
 % Front matter: capture abstract, then render title + abstract + TOC in one full-width block.
 \makeatletter
@@ -97,7 +108,7 @@
 \begin{document}
 
 \begin{abstract}
-This report presents a comparative study of three major generative modeling paradigms---Variational Autoencoders (VAE), Generative Adversarial Networks (GAN), and Diffusion Models---applied to the synthesis of $128 \times 128$ cat face images. We evaluate $\beta$-VAE and VQ-VAE-1 (VAE family), WGAN-GP and SN-GAN (GAN family), DDIM and a Tiny Latent Diffusion Model (diffusion family), and add a classical PixelCNN autoregressive prior over VQ-VAE code indices as a baseline for latent generative modeling. The study employs structured grid search over key hyperparameters. We evaluate models using Fréchet Inception Distance (FID), latent interpolations, and a qualitative comparison of PixelCNN versus Tiny LDM (sample quality and wall-clock generation time). Furthermore, we conduct an exploratory \emph{chimera} extension: WGAN-GP trained on $\sim 25{,}000$ mixed dogs-and-cats images at $64 \times 64$ to observe distribution averaging phenomena. This work provides a practical framework for comparing generative paradigms.
+We train and compare seven generative models on $128 \times 128$ cat faces: $\beta$-VAE and VQ-VAE-1; WGAN-GP and SN-GAN; pixel DDIM and a tiny latent diffusion model; and a PixelCNN prior over VQ codes. Each hyperparameter cell is run with three seeds and ranked by Fréchet Inception Distance (FID) where checkpoints exist; sample grids and latent interpolations cover the rest. WGAN-GP achieves the lowest FID ($174.4$), ahead of SN-GAN ($226.1$) and the VAE/VQ-prior baselines. On Apple MPS, tiny LDM samples about $5\times$ faster than PixelCNN through the same frozen VQ decoder, but those checkpoints decode to noise whereas PixelCNN keeps weak spatial structure. A chimera extension trains WGAN-GP on $\sim 25{,}000$ mixed dog--cat images at $64 \times 64$; outputs blend species features rather than separating classes.
 \end{abstract}
 
 \reportmaketitle
@@ -105,22 +116,23 @@ This report presents a comparative study of three major generative modeling para
 \clearpage
 \section{Introduction}
 
-Generative modeling of images has been a central research challenge in machine learning, with three primary paradigms emerging over the past decade: Variational Autoencoders (VAEs) \cite{kingma2013auto}, Generative Adversarial Networks (GANs) \cite{NIPS2014_f033ed80}, and Diffusion Models \cite{NEURIPS2020_4c5bcfec}. Each paradigm offers distinct theoretical foundations, training dynamics, and trade-offs in quality, diversity, and training stability. VAEs provide a principled probabilistic framework but often produce blurrier samples; GANs generate sharp images but suffer from training instability and mode collapse; diffusion models have recently demonstrated superior sample quality but require longer inference times.
+VAEs \cite{kingma2013auto}, GANs \cite{NIPS2014_f033ed80}, and diffusion models \cite{NEURIPS2020_4c5bcfec} are the three standard approaches to image synthesis. They differ in training stability, sample sharpness, and inference cost---there is no single winner. We keep the data pipeline fixed: Kaggle cat faces cropped from \texttt{.cat} landmarks to $128 \times 128$, with the same logging, early stopping, and evaluation for all seven trainers.
 
-The selection of appropriate generative models for practical applications remains highly dependent on specific constraints: available computational resources, target sample quality, required inference speed, and stability during training. In this project, we conduct a systematic comparison of representative architectures across all three paradigms on a well-defined task: generating cat face images from the Kaggle Cat Dataset.
+We report FID on held-out validation faces, latent interpolations for $\beta$-VAE and WGAN-GP, a PixelCNN--tiny-LDM prior comparison on frozen VQ decoders, and a chimera extension on mixed dogs and cats at $64 \times 64$. WGAN-GP and SN-GAN replace a plain DCGAN to reduce mode collapse on this single-class dataset.
 
-Our objectives align with the specific project requirements: (i) standardize varying image resolutions utilizing raw annotation data to accommodate limited computing resources; (ii) systematically compare generation quality across three paradigms (VAE, GAN, Diffusion) using quantitative metrics (FID) and qualitative assessment; (iii) directly address mode collapse through stabilized GAN architectures (WGAN-GP with gradient penalty, SN-GAN with spectral normalization); (iv) analyze latent space smoothness via interpolation: generating 10-image sequences (2 random endpoints + 8 linear intermediates) to assess semantic continuity; and (v) explore cross-species generalization via a \emph{chimera} experiment: WGAN-GP on mixed ``Dogs vs. Cats'' data at $64 \times 64$ to investigate whether the unconditional model learns to separate classes or exhibits distribution averaging (e.g., chimera-like outputs).
+Training comprised $141$ jobs ($138$ cat-face grid runs plus three chimera seeds). MLflow records $217$ cat-face runs ($157$ finished, $60$ failed; Table~\ref{tab:mlflow_summary}); chimera checkpoints are stored separately under \texttt{checkpoints/chimera/}. Rankings and sample analysis follow in Section~\ref{sec:results}.
 
 \section{Methodology}
+\label{sec:methodology}
 
 \subsection{Datasets and Preprocessing}
 
-The primary dataset consists of over 9,000 cat images sourced from the Kaggle Cat Dataset \cite{crawford2018cat}. Raw images exhibit significant variability in resolution, aspect ratio, and face positioning, which poses a challenge for batch processing and limited computing resources. To address this, we apply the following preprocessing pipeline:
+The primary dataset consists of over 9,000 cat images from the Kaggle Cat Dataset \cite{crawford2018cat}. Source files differ widely in resolution, aspect ratio, and head pose, so preprocessing is needed for comparable inputs. We standardize inputs as follows:
 
 \begin{enumerate}
     \item \textbf{Annotation Parsing}: Instead of relying on pre-trained face detectors, we extract the exact 9 coordinate points (eyes, mouth, ears) provided in the corresponding \texttt{.cat} annotation files.
     \item \textbf{Face Cropping}: Bounding boxes are dynamically calculated based on the extreme coordinates of the facial landmarks with a $35\%$ pad on the landmark extent (\texttt{BBOX\_PAD\_RATIO}$=0.35$).
-    \item \textbf{Resizing}: Cropped regions are standardized to $128 \times 128$ pixels using Lanczos resampling (\texttt{PIL.Image.LANCZOS}), drastically reducing VRAM footprint and training time.
+    \item \textbf{Resizing}: Cropped regions are resized to $128 \times 128$ with Lanczos resampling (\texttt{PIL.Image.LANCZOS}).
     \item \textbf{Normalization}: All cat-face training tensors are mapped to $[-1, 1]$ via \texttt{ToTensor} and per-channel normalization with mean $0.5$ and std $0.5$, matching $\tanh$ decoder/generator outputs; pixel DDIM sampling clamps predicted images to $[-1, 1]$ each step.
     \item \textbf{Training augmentation}: The cat-face train split applies \texttt{RandomHorizontalFlip} ($p{=}0.5$); validation tensors are not augmented.
 \end{enumerate}
@@ -129,16 +141,16 @@ Processed images are written to \texttt{train.npy} and \texttt{val.npy} using a 
 
 Comparison of raw vs. processed images is shown in Figure~\ref{fig:preprocessing_comparison}.
 
-\begin{figure}[H]
+\begin{figure}[!htbp]
     \centering
     \includegraphics[width=\linewidth]{preprocessing_comparison.png}
     \caption{Sample images after preprocessing: cropped and resized to $128 \times 128$ pixels.}
     \label{fig:preprocessing_comparison}
 \end{figure}
 
-For the exploratory chimera extension, we utilize the Kaggle "Dogs vs. Cats" competition benchmark dataset \cite{dogs-vs-cats}, which contains $\sim 25{,}000$ mixed images (Figure~\ref{fig:mixed_samples}). Since this dataset lacks facial landmark annotations, applying the coordinate-based cropping procedure is impossible. Instead, we apply the same scale-and-crop strategy at $64 \times 64$: resize the shorter edge to 64 pixels, then extract a $64 \times 64$ center crop, and store the result as \texttt{dogcat\_train\_64.npy} for training.
+For the chimera extension we use the Kaggle ``Dogs vs.\ Cats'' dataset \cite{dogs-vs-cats} ($\sim 25{,}000$ mixed images; Figure~\ref{fig:mixed_samples}). It has no landmark files, so we cannot reuse the face-crop pipeline. We instead resize the shorter edge to 64 pixels, take a $64 \times 64$ center crop, and store tensors as \texttt{dogcat\_train\_64.npy}.
 
-\begin{figure}[H]
+\begin{figure}[!htbp]
     \centering
     \includegraphics[width=\linewidth]{processed_samples_dogcat.png}
     \caption{Sample images from the mixed "Dogs vs. Cats" dataset after scale-and-crop preprocessing (chimera pipeline uses $64 \times 64$ tensors).}
@@ -156,14 +168,14 @@ VAEs define a probabilistic generative model via a learned latent variable distr
 \textbf{VQ-VAE-1:} A discrete VAE using vector quantization in the latent space \cite{NIPS2017_7a98af17}. Instead of a continuous distribution, VQ-VAE discretizes the latent space into a learned codebook to reduce the blurriness typical of standard VAEs. Grid search varies: $\text{codebook\_size} \in \{512, 1024\}$, $\text{feat\_map\_size} \in \{16 \times 16, 8 \times 8\}$, and reconstruction loss (L1 vs.\ MSE). Non-swept defaults are $\text{embedding\_dim}=64$ and $\text{commitment\_cost}=0.25$.
 
 \item[Generative Adversarial Networks (GAN)]
-GANs formulate image generation as an adversarial game between a generator $G$ and discriminator $D$. To directly address the mode collapse problem required by this study, we avoid the standard DCGAN and evaluate two stabilized variants:
+GANs train a generator $G$ against a discriminator $D$. We use two stabilized variants instead of a plain DCGAN:
 
-\textbf{WGAN-GP:} Wasserstein GAN \cite{pmlr-v70-arjovsky17a} with gradient penalty \cite{NIPS2017_892c3b1c} uses the Wasserstein distance and adds a gradient penalty term to enforce the Lipschitz constraint, significantly reducing mode collapse and providing meaningful learning curves. Both GAN generators use a fixed latent dimension of $128$. Grid search varies: $\text{n\_critic} \in \{3, 5\}$, batch size $\in \{64, 128\}$, learning rate schedule $\in \{\text{symmetric}, \text{TTUR}\}$.
+\textbf{WGAN-GP:} Wasserstein GAN \cite{pmlr-v70-arjovsky17a} with gradient penalty \cite{NIPS2017_892c3b1c}. Both GAN generators use latent dimension $128$. Grid search varies: $\text{n\_critic} \in \{3, 5\}$, batch size $\in \{64, 128\}$, learning rate schedule $\in \{\text{symmetric}, \text{TTUR}\}$.
 
 \textbf{SN-GAN:} Spectral Normalization GAN \cite{DBLP:journals/corr/abs-1802-05957} stabilizes discriminator training by normalizing weights with their largest singular value. Training uses one discriminator update per generator step and hinge losses. Grid search varies: batch size $\in \{64, 128\}$, learning rate schedule $\in \{\text{symmetric}, \text{TTUR}\}$, horizontal flip augmentation.
 
 \item[Diffusion Models]
-Diffusion models define a forward process that corrupts images to noise, then learn to reverse this process via a neural network. To mitigate the immense computational cost of diffusion, we focus on optimized architectures:
+Diffusion models learn to reverse a noise-corruption process. Full-resolution pixel diffusion is slow, so we train two lighter setups:
 
 \textbf{DDIM:} A faster sampling approach for diffusion models \cite{DBLP:journals/corr/abs-2010-02502} that uses a deterministic sampling procedure, enabling inference in fewer steps. A U-Net denoises $128 \times 128$ pixel images with an $8 \times 8$ bottleneck over $T{=}1000$ forward diffusion steps; an exponential moving average (EMA) copy of the U-Net is used for validation and sampling. Grid search varies: noise schedule $\in \{\text{linear}, \text{cosine}\}$, base channels $\in \{64, 128\}$, and DDIM steps $\in \{50, 100\}$ (stored in each checkpoint and used at generation time).
 
@@ -181,12 +193,15 @@ All models employ the Adam optimizer \cite{kingma2014adam} with $\text{lr} = 2 \
 
 Symmetric vs.\ TTUR learning-rate schedules \cite{heusel2017gans} are implemented by pairing generator learning rate $2 \times 10^{-4}$ with discriminator learning rate $\in \{2 \times 10^{-4}, 4 \times 10^{-4}\}$.
 
-Each hyperparameter configuration is trained independently across three fixed random seeds $\{42, 0, 3407\}$. Seeds are reset in PyTorch, NumPy, and Python before every run. Grid-sweep results are compared per cell; evaluation metrics are aggregated over the same seed list for reproducibility. Table~\ref{tab:hyperparam_grid} lists the search space per family; the \textbf{Runs} column counts trained jobs as (grid cells) $\times$ 3 seeds. The main cat-face protocol comprises $135$ such runs. The \texttt{pixelcnn-experiment} pipeline adds three fixed-configuration Tiny LDM trainings (DDIM steps $=100$, EMA on) for prior wall-clock comparison against PixelCNN. The chimera extension adds three further WGAN-GP runs at $64 \times 64$ ($141$ training jobs in total).
+Each hyperparameter configuration is trained independently across three fixed random seeds $\{42, 0, 3407\}$. Seeds are reset in PyTorch, NumPy, and Python before every run. Grid-sweep results are compared per cell; evaluation metrics are aggregated over the same seed list for reproducibility. Table~\ref{tab:hyperparam_grid} lists the search space per family; the \textbf{Runs} column counts trained jobs as (grid cells) $\times$ 3 seeds. The main cat-face grid comprises $132$ such jobs ($44$ hyperparameter cells across six families). Adding three fixed-architecture PixelCNN prior trainings and three fixed Tiny LDM prior trainings (from \texttt{pixelcnn-experiment}) yields $138$ cat-face training jobs. The chimera extension adds three further WGAN-GP runs at $64 \times 64$ ($141$ training jobs in total). MLflow may log more than one run record per planned job when sweeps are restarted; $217$ cat-face run records appear in the tracking database (Table~\ref{tab:mlflow_summary}), while chimera runs are stored under \texttt{checkpoints/chimera/}.
 
+\subsection{Compute and Resource Strategy}
 
-\begin{table}[H]
+Training seven families on laptop-class hardware (Apple MPS) required fixing resolution, run length, and search breadth up front. All cat-face models train on $128 \times 128$ tensors stored as \texttt{.npy} shards so batches never reload full-resolution JPEGs. Early stopping (patience $15$, cap $1000$ epochs) cuts unpromising runs short. Hyperparameters are explored on a fixed grid so every job stays reproducible. Diffusion stays practical via DDIM sampling ($50$--$100$ steps at inference, not $1000$) and a tiny LDM on $16 \times 16$ VQ latents instead of pixel-space U-Nets at higher resolution. The chimera extension uses $64 \times 64$ center crops on $\sim 25{,}000$ images because landmark cropping is unavailable and $128 \times 128$ GAN training on the full mixed set was outside our time budget. MLflow logs validation metrics and $4 \times 4$ sample grids so we could monitor runs without keeping every process on the GPU.
+
+\begin{table}[!htbp]
     \centering
-    \caption{Hyperparameter grid summary across generative model families.}
+    \caption{Hyperparameter grid summary across generative model families. Cat-face total ($138$) is $132$ grid cells $\times$ three seeds, plus three PixelCNN prior runs and three fixed Tiny LDM runs for the prior-comparison experiment.}
     \label{tab:hyperparam_grid}
     \renewcommand{\arraystretch}{1.4}
     \resizebox{\linewidth}{!}{%
@@ -201,13 +216,12 @@ Each hyperparameter configuration is trained independently across three fixed ra
         DDIM & schedule, ch., steps, EMA & $\{lin., cos.\} \times \{64, 128\} \times \{50, 100\}$, EMA on & 24 \\
         Tiny LDM & schedule, ch., steps, EMA & same as DDIM (frozen VQ latents) & 24 \\
         PixelCNN prior & hidden width, depth & $128$ channels, $10$ masked layers (fixed) & 3 \\
-        \hline
-        \multicolumn{3}{|r|}{\textbf{Total (cat-face sweeps)}} & \textbf{135} \\
+        Prior-comp.\ Tiny LDM & (fixed) & EMA on, $100$ DDIM steps & 3 \\
+        \hline  
+        \multicolumn{3}{|r|}{\textbf{Cat-face trainings}} & \textbf{138} \\
         \hline
     \end{tabular}%
     }
-    \vspace{4pt}
-    {\small Includes $135$ cat-face grid jobs; add $+3$ fixed Tiny LDM prior runs and $+3$ chimera jobs for $141$ trainings total (see text).}
 \end{table}
 
 \subsection{Evaluation Metrics}
@@ -216,7 +230,7 @@ Each hyperparameter configuration is trained independently across three fixed ra
 \item[Fréchet Inception Distance (FID)]
 FID \cite{heusel2017gans} compares the distribution of real validation images to unconditionally generated samples in the feature space of a pretrained Inception-v3 network. Lower FID indicates better alignment with the data distribution. We use each model's native sampling procedure (e.g., $z \sim \mathcal{N}(0,I)$ for $\beta$-VAE and GANs, DDIM for pixel diffusion, random codes for VQ-VAE when no separate prior is evaluated). Generated tensors in $[-1,1]$ are denormalized to $[0,1]$, resized to $299 \times 299$, and passed through Inception-v3 with ImageNet input normalization before feature extraction.
 
-We report FID on the held-out validation set for every trained family: $\beta$-VAE, VQ-VAE-1, PixelCNN, Tiny LDM, WGAN-GP, SN-GAN, and DDIM, using a fixed sample count ($N{=}1000$) per run. For each model family we evaluate \textbf{every} hyperparameter grid cell that has a \texttt{best} checkpoint: FID is computed independently per seed, then mean $\pm$ standard deviation is reported per cell; the cell with the lowest mean FID is recorded as \texttt{best\_run}. For VQ-linked models (VQ-VAE, PixelCNN, Tiny LDM), frozen VQ weights per seed come from \texttt{prior\_best\_by\_seed.json} (lowest validation reconstruction across the VQ sweep). PixelCNN and Tiny LDM use their learned priors with that frozen decoder; VQ-VAE FID uses the trainer's random-code debug sampler and is reported only as a weak baseline, not comparable to the learned priors.
+We report FID on the held-out validation set for $\beta$-VAE, VQ-VAE-1, PixelCNN, WGAN-GP, and SN-GAN using $N{=}1000$ samples per checkpoint. DDIM and tiny LDM checkpoints from the main sweep were trained and logged to MLflow but are absent from the final \texttt{fid\_scores.json} export; we judge them from sample grids in Section~\ref{sec:results}. For each FID-evaluated family we score every hyperparameter grid cell that has a \texttt{best} checkpoint: FID is computed per seed, then mean $\pm$ standard deviation is reported per cell. Many cells were evaluated on a single seed ($87$ per-seed scores across $12$--$24$ cells per family). For VQ-linked models, frozen VQ weights per seed come from \texttt{prior\_best\_by\_seed.json}. PixelCNN and tiny LDM use their learned priors with that decoder; VQ-VAE FID uses random code indices as a weak baseline only.
 
 \item[Latent Interpolation Analysis]
 For models with a continuous latent vector $z \in \mathbb{R}^d$, we test whether the learned representation is semantically smooth. We sample two endpoints $z_1, z_2 \sim \mathcal{N}(0,I)$ from the prior used at generation time, form eight uniformly spaced convex combinations
@@ -224,35 +238,171 @@ $z_\alpha = (1-\alpha) z_1 + \alpha z_2$, $\alpha \in \{0, \tfrac{1}{9}, \ldots,
 and decode each $z_\alpha$ to an image, yielding a strip of ten frames. Continuity of appearance along the strip is judged qualitatively. This protocol is applied to $\beta$-VAE and WGAN-GP using the \texttt{best\_run} hyperparameter cell from \texttt{fid\_scores.json} (lowest mean FID); it is not used for discrete VQ codes or diffusion latents without an explicit interpolation definition.
 
 \item[PixelCNN vs.\ Tiny LDM Prior Comparison]
-Using the same frozen VQ-VAE per seed, we compare autoregressive PixelCNN sampling against Tiny LDM (DDIM steps $=100$, EMA) on wall-clock generation time and side-by-side sample grids. Timings use device synchronization on Apple MPS; outputs are written to \texttt{results/prior\_comparison/}.
+Using the same frozen VQ-VAE per seed, we compare autoregressive PixelCNN sampling against Tiny LDM (DDIM steps $=100$, EMA) on wall-clock generation time and side-by-side sample grids. Timings use device synchronization on Apple MPS; outputs are written to \texttt{results/prior\_comparison/}. Training durations for all families are summarized separately from MLflow run timestamps (Table~\ref{tab:mlflow_summary}).
 
 \item[Exploratory Extension: Mixed Distributions (Chimera)]
-We train WGAN-GP on a mixed dataset containing both cats and dogs at $64 \times 64$ resolution ($\sim 25{,}000$ combined images, 90/10 train/val split per seed). The goal is to observe whether the unconditional model learns to separate the classes into mode-specific outputs or suffers from distribution averaging, resulting in generating ``chimeras'' (e.g., cat faces with dog ears or dog faces with feline features). This experiment probes the limits of unconditional generation under multi-modal input distributions. WGAN-GP was chosen as a stabilized adversarial baseline at reduced resolution for compute efficiency on the full mixed dataset. Diffusion models were too computationally expensive for $\sim 25{,}000$ images, and VAEs were rejected because blurred reconstructions would obscure distribution averaging. Training uses the same early-stopping hyperparameters as the main cat study but defaults to a lower epoch cap ($100$) for this exploratory run; all three project seeds $\{42, 0, 3407\}$ are trained independently.
+We train WGAN-GP on cats and dogs together at $64 \times 64$ ($\sim 25{,}000$ images, 90/10 train/val split per seed) to test whether an unconditional generator separates the classes or averages them into hybrid faces. We skipped diffusion (too slow at this scale) and VAEs (blur would hide the effect). Early stopping matches the cat study but caps at $100$ epochs.
 \end{description}
 
 \section{Results}
+\label{sec:results}
 
 \subsection{Fr\'echet Inception Distance}
-[To be populated from \texttt{results/fid\_scores.json}.]
+
+Table~\ref{tab:fid_best} and Figure~\ref{fig:fid_best_runs} summarize the lowest-mean-FID cell per family. WGAN-GP leads; GANs score clearly below the VAE and VQ-prior baselines in this export.
+
+The WGAN-GP grid spans FID $174.4$--$287.9$ over $24$ cells. Its best cell uses $n_{\text{critic}}{=}5$, batch $128$, and symmetric rates ($\text{lr}_G{=}\text{lr}_D{=}2{\times}10^{-4}$). Worst cells paired batch $64$ with TTUR ($\text{lr}_D{=}4{\times}10^{-4}$). SN-GAN peaked at batch $128$, symmetric rates, and \emph{no} horizontal flip ($226.1$); flip augmentation pushed some cells above $370$. For $\beta$-VAE, $\beta{=}1.0$ and $\text{latent\_dim}{=}128$ beat $\beta{=}4.0$ (best $278.3$ vs.\ worst $335.6$). VQ-VAE-1 preferred an $8{\times}8$ map, $K{=}512$, and MSE ($243.5$); $16{\times}16$ maps with L1 scored worse. VQ-VAE FID uses random code indices---a decoder sanity check, not a learned prior. DDIM and tiny LDM runs from the main sweep are missing from \texttt{fid\_scores.json}; we judge them from sample grids below.
+
+\input{../notebooks/report_snippets/fid_table.tex}
+
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=\linewidth]{fid_best_runs.png}
+    \caption{Mean FID of the best grid cell per model family (lower is better).}
+    \label{fig:fid_best_runs}
+\end{figure}
+
+Figure~\ref{fig:fid_grid} shows the spread of FID across all evaluated grid cells per family. WGAN-GP exhibits the tightest cluster at low FID; $\beta$-VAE and PixelCNN cells span higher values with greater variance across hyperparameters.
+
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=\linewidth]{fid_grid_distribution.png}
+    \caption{FID distribution over all hyperparameter cells with FID evaluations ($N{=}87$ per-seed scores).}
+    \label{fig:fid_grid}
+\end{figure}
+
+All $217$ MLflow cat-face runs hit early stopping (Table~\ref{tab:mlflow_summary}, Figure~\ref{fig:mlflow_summary}). VQ-VAE failed most often ($27/57$); WGAN-GP ($33/41$ finished) and SN-GAN ($24/26$) were the most reliable main families. At best-FID settings (Figure~\ref{fig:training_curves}), GAN validation metrics settle in $\sim$40--70 epochs, while VQ-VAE and PixelCNN often ran past $150$.
+
+Training wall-clock on Apple MPS (Table~\ref{tab:mlflow_summary}, finished runs only) separates \emph{epoch count} from \emph{work per epoch}. Tiny LDM is cheapest per epoch ($\sim$10\,s) but pixel DDIM is the slowest ($\sim$131\,s/epoch) and tends toward the longest total jobs (median $\sim$145\,min). WGAN-GP averages $\sim$187\,s per epoch---far above SN-GAN ($\sim$53\,s) because each epoch runs $n_{\text{critic}}$ discriminator updates---even though both stop near $40$--$43$ epochs. VQ-VAE trains $\sim$3$\times$ longer than $\beta$-VAE in epochs (median $151$ vs.\ $43$) at similar per-epoch cost ($\sim$18--27\,s), so total time still exceeds the GANs. These timings mix grid cells and batch sizes; they complement the prior-comparison sampling benchmark (PixelCNN vs.\ Tiny LDM inference only).
+
+Sample boards for WGAN-GP and SN-GAN (Figure~\ref{fig:samples_best}) show varied poses and colors without collapsing to a single template. WGAN-GP also has the tightest FID spread across grid cells (Figure~\ref{fig:fid_grid}). Figure~\ref{fig:fid_vs_mlflow} plots per-seed FID against each run's best logged validation metric: lower VAE reconstruction loss and more negative WGAN critic values tend to pair with better FID, but the link is noisy across cells.
+
+\input{../notebooks/report_snippets/mlflow_summary.tex}
+
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=\linewidth]{mlflow_run_summary.png}
+    \caption{MLflow outcomes per model family (finished vs.\ failed runs, median epochs, median minutes per epoch).}
+    \label{fig:mlflow_summary}
+\end{figure}
+
+\begin{figure*}[!htbp]
+    \centering
+    \includegraphics[width=\textwidth]{training_curves_best_fid.png}
+    \caption{Validation metrics at the best-FID hyperparameter cell (one finished run per seed).}
+    \label{fig:training_curves}
+\end{figure*}
+
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=\linewidth]{fid_vs_best_metric.png}
+    \caption{Per-seed FID vs.\ best MLflow validation metric for matched runs ($N{=}87$).}
+    \label{fig:fid_vs_mlflow}
+\end{figure}
+
+\subsection{Training Progression}
+
+Figure~\ref{fig:progression_all} shows $4{\times}4$ sample grids from training at the best-FID settings for each FID-evaluated family. WGAN-GP faces are recognizable within $\sim$20 epochs and sharpen by epoch $\sim 40$; $\beta$-VAE, VQ-VAE, PixelCNN, and SN-GAN improve more slowly. We kept $1{,}837$ epoch snapshot PNGs across $122$ checkpoint directories (Table~\ref{tab:checkpoint_coverage}).
+
+\begin{table}[!htbp]
+    \centering
+    \caption{FID evaluation coverage and checkpoint artifacts on disk.}
+    \label{tab:checkpoint_coverage}
+    \begin{tabular}{lrrr}
+        \toprule
+        \textbf{Model} & \textbf{FID cells} & \textbf{samples\_best} & \textbf{Epoch grids} \\
+        \midrule
+        WGAN-GP & 24 & 24 & 222 \\
+        SN-GAN & 24 & 24 & 234 \\
+        VQ-VAE-1 & 24 & 24 & 797 \\
+        $\beta$-VAE & 12 & 12 & 131 \\
+        PixelCNN & 3 & 3 & 52 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure*}[!htbp]
+    \centering
+    \includegraphics[width=\textwidth]{progression_all_best_fid.png}
+    \caption{Training sample progression at best-FID hyperparameters (four evenly spaced epoch snapshots per model).}
+    \label{fig:progression_all}
+\end{figure*}
 
 \subsection{Qualitative Samples}
-[To be populated from \texttt{make additional-samples} and training checkpoints.]
+
+Figure~\ref{fig:samples_best} shows $4 \times 4$ grids from the best-FID checkpoint per FID-ranked family. DDIM comes from a retained pre-sweep checkpoint (\texttt{checkpoints/old\_ddim/}); Tiny LDM uses the fixed prior-comparison run (EMA, $100$ DDIM steps).
+
+\begin{figure*}[!htbp]
+    \centering
+    \includegraphics[width=\textwidth,height=0.65\textheight,keepaspectratio]{samples_best_per_family.png}
+    \caption{Unconditional samples from the best checkpoint per model family ($128 \times 128$).}
+    \label{fig:samples_best}
+\end{figure*}
+
+GAN samples are sharp with occasional artifacts; $\beta$-VAE outputs stay soft. PixelCNN shows blurry coarse structure; the prior-comparison tiny LDM collapses to decoder noise. Pixel DDIM is grainier than the latent variants. Figure~\ref{fig:gan_vs_vae} places the best WGAN-GP and $\beta$-VAE grids side by side.
+
+\begin{figure*}[!htbp]
+    \centering
+    \includegraphics[width=0.72\textwidth]{samples_gan_vs_vae.png}
+    \caption{Side-by-side comparison: best WGAN-GP vs.\ best $\beta$-VAE samples.}
+    \label{fig:gan_vs_vae}
+\end{figure*}
 
 \subsection{Latent Interpolation}
-[To be populated from \texttt{results/interpolations/}.]
+
+We linearly interpolate between two latent vectors $z_1, z_2 \sim \mathcal{N}(0,I)$ with eight interior steps and decode all ten states for $\beta$-VAE and WGAN-GP at their best-FID settings (protocol in Section~\ref{sec:methodology}). Figure~\ref{fig:interpolation} shows seed~3407, the only seed exported under \texttt{results/interpolations/}.
+
+\begin{figure*}[!htbp]
+    \centering
+    \includegraphics[width=\textwidth]{interpolation_panel.png}
+    \caption{Latent interpolations for $\beta$-VAE and WGAN-GP (seed~3407, best-FID configs).}
+    \label{fig:interpolation}
+\end{figure*}
+
+For $\beta$-VAE the path is visually smooth: fur color and pose drift gradually, but fine structure stays soft. WGAN-GP endpoints are sharper; intermediate frames mostly morph plausibly, though whiskers and eye shape can jump. Both strips show that linear interpolation in $z$ carries semantic meaning---the face does not dissolve into noise mid-path---but only the GAN keeps crisp detail.
 
 \subsection{PixelCNN vs.\ Tiny LDM}
-[To be populated from \texttt{results/prior\_comparison/}.]
+
+With a frozen VQ-VAE-1 ($K{=}512$, $16 \times 16$, MSE) per seed, wall-clock generation on Apple MPS averages $0.260$\,s per image for PixelCNN and $0.050$\,s for Tiny LDM ($5.2\times$ faster; mean over three seeds, $N{=}16$ samples each, device synchronization enabled). Figure~\ref{fig:prior_samples} compares sample grids under that shared decoder.
+
+\begin{figure*}[!htbp]
+    \centering
+    \includegraphics[width=\textwidth]{prior_samples_panel.png}
+    \caption{PixelCNN vs.\ Tiny LDM samples under the same frozen VQ-VAE decoder (one row of four samples per model and seed).}
+    \label{fig:prior_samples}
+\end{figure*}
+
+The fixed tiny-LDM prior decodes to salt-and-pepper noise, while PixelCNN yields blurry but spatially coherent blobs---not recognizable cats, but not pure static either. Neither prior matches the GAN FIDs in Table~\ref{tab:fid_best}.
 
 \subsection{Chimera Extension}
-[To be populated from \texttt{checkpoints/chimera/}.]
+
+On the mixed dataset at $64 \times 64$, samples (Figure~\ref{fig:chimera}) rarely look like a pure dog or cat; muzzles, ears, and fur often blend both species. An unconditional GAN on unlabeled mixed data therefore averages classes into hybrid ``chimera'' faces instead of learning two separate modes. Training stopped after $8$--$10$ logged snapshot epochs per seed (early stopping, cap $100$). Figure~\ref{fig:chimera_progress} shows hybrid features emerging for seed~$0$.
+
+\begin{figure*}[!htbp]
+    \centering
+    \includegraphics[width=\textwidth]{chimera_panel.png}
+    \caption{Chimera WGAN-GP samples ($64 \times 64$, mixed dog--cat training, three seeds).}
+    \label{fig:chimera}
+\end{figure*}
+
+\begin{figure*}[!htbp]
+    \centering
+    \includegraphics[width=\textwidth]{chimera_progress_chimera_64_seed0.png}
+    \caption{Chimera training progression (seed~$0$, epoch snapshot grids).}
+    \label{fig:chimera_progress}
+\end{figure*}
 
 \section{Conclusions}
-[To be populated]
+
+Stabilized GANs ranked highest on FID for $128 \times 128$ cat faces; within WGAN-GP alone, hyperparameters moved scores by more than $110$ points. VAE outputs stayed blurry despite reasonable reconstruction, and neither VQ random codes nor PixelCNN matched GAN sample quality. Diffusion checkpoints trained successfully but were omitted from the FID export; qualitatively, pixel DDIM looked grainy and the fixed tiny-LDM prior decoded to noise.
+
+PixelCNN sampled about $5\times$ slower than tiny LDM through the same decoder and still failed to produce recognizable cats. On mixed dog--cat data, the chimera WGAN-GP blended species rather than separating them; class labels would be needed for controlled multi-class generation.
+
+VQ-VAE had the highest training failure rate ($27/57$ runs), SN-GAN horizontal flip often hurt FID, and validation metrics only loosely predicted FID across grid cells. Limitations include incomplete per-seed FID coverage, missing diffusion FIDs, a single saved interpolation seed, and MPS-specific timings. Next steps: export diffusion FIDs, score all three seeds per grid cell, and try class-conditional training on mixed data.
 
 \section{AI Disclosure}
 
-This report was edited with AI assistance, to improve clarity, consistency, and formatting. Part of the docstrings, some phrasing and code refactoring or debugging were refined using AI tools, but all scientific decisions and interpretations are the authors' own. The core content, experimental design, and analysis were developed by the authors.
+Parts of this report were edited with AI tools for wording and formatting; experiments, hyperparameter choices, and conclusions are the authors'.
 
 \bibliographystyle{IEEEtran}
 \bibliography{mybib}
@@ -260,17 +410,53 @@ This report was edited with AI assistance, to improve clarity, consistency, and 
 \appendix
 
 \section{Additional Experimental Details}
-\textbf{End-to-end protocol.} \texttt{make setup} $\rightarrow$ download/process cat data $\rightarrow$ \texttt{make run-all} (VAE, GAN, diffusion sweeps; VQ prior manifest; PixelCNN experiment) $\rightarrow$ \texttt{make eval} (FID + interpolations) $\rightarrow$ optional \texttt{make chimera} after \texttt{make process-dogcat-chimera}. Regenerate report figures with \texttt{make report-figures} after \texttt{make process-data}.
+\begin{description}
+  \item[End-to-end protocol.] \texttt{make setup} $\rightarrow$ download/process cat data $\rightarrow$ \texttt{make run-all} (VAE, GAN, diffusion sweeps; VQ prior manifest; PixelCNN experiment) $\rightarrow$ \texttt{make eval} (FID + interpolations) $\rightarrow$ optional \texttt{make chimera} after \texttt{make process-dogcat-chimera}. Regenerate methodology figures with \texttt{make report-figures} after \texttt{make process-data}. Analysis notebooks \texttt{notebooks/01}--\texttt{09} read \texttt{results/}, \texttt{mlflow.db}, and checkpoint PNGs; execute from \texttt{notebooks/} with \texttt{jupyter nbconvert --execute} to refresh \texttt{plots/results/} and \texttt{report\_snippets/}.
 
-\textbf{Pipeline order.} \texttt{make run-all} executes VAE, GAN, and diffusion grid sweeps, writes the VQ-VAE prior manifest, then runs the PixelCNN experiment (train PixelCNN $\times$3 seeds, train one Tiny LDM config per seed for prior comparison, wall-clock sample grids).
+  \item[Pipeline order.] \texttt{make run-all} executes VAE, GAN, and diffusion grid sweeps, writes the VQ-VAE prior manifest, then runs the PixelCNN experiment (train PixelCNN $\times$3 seeds, train one Tiny LDM config per seed for prior comparison, wall-clock sample grids).
 
-\textbf{Logging.} MLflow records hyperparameters, train/validation metrics, periodic $4 \times 4$ sample grids, and \texttt{samples\_best.png} from the best checkpoint. Finished runs are not resumed on restart.
+  \item[Logging.] MLflow records hyperparameters, train/validation metrics, periodic $4 \times 4$ sample grids, and \texttt{samples\_best.png} from the best checkpoint. It also lets us extract elapsed time and the number of epochs per run. Run names follow \texttt{\{model\_type\}\_seed\{seed\}}; multiple hyperparameter cells share the same name. Finished runs are not resumed on restart.
 
-\textbf{Prior comparison.} PixelCNN vs.\ Tiny LDM generation time is measured with device synchronization on Apple MPS; outputs land in \texttt{results/prior\_comparison/}.
+  \item[Prior comparison.] PixelCNN vs.\ Tiny LDM generation time is measured with device synchronization on Apple MPS; outputs land in \texttt{results/prior\_comparison/}. Frozen VQ-VAE per seed: $K{=}512$, $16{\times}16$ map, MSE reconstruction.
 
-\textbf{Checkpoints.} Best weights are saved per run as \texttt{best\_seed\{seed\}.pt} inside \texttt{checkpoints/<model\_type>/<slug>/}. Chimera training uses \texttt{checkpoints/chimera/}.
+  \item[Checkpoints.] Best weights are saved per run as \texttt{best\_seed\{seed\}.pt} inside \texttt{checkpoints/<model\_type>/<slug>/}. Epoch snapshot grids are stored as \texttt{samples\_epoch*.png}. Chimera training uses \texttt{checkpoints/chimera/}.
 
-\section{Code Availability}
-All code, configurations, and training logs are available at: \url{https://github.com/FlorekPawel/gen-cats}
+  \item[Exported statistics.] Key numeric exports used in this report: \texttt{fid\_scores.json} ($87$ per-seed FID rows), \texttt{report\_snippets/fid\_table.tex}, \texttt{prior\_timing.csv}, \texttt{mlflow\_summary.tex}, and \texttt{training\_curve\_runs.csv} ($15$ matched MLflow runs at best-FID hyperparameters).
+\end{description}
+
+\section{Code Availability and Reproducibility}
+
+All code, configurations, and training logs are available at \url{https://github.com/FlorekPawel/gen-cats}. The repository is the single source of truth for re-running experiments and regenerating this report.
+
+\begin{description}
+  \item[Quick start.] Clone the repository, run \texttt{make setup}, copy \texttt{.env.example} to \texttt{.env} with Kaggle API credentials, then follow \texttt{README.md}. Run \texttt{make help} for the full Make target list.
+
+  \item[End-to-end cat-face pipeline.] (from repo root) \texttt{make download-data} and \texttt{make process-data}; \texttt{make run-all} ($138$ cat-face trainings); \texttt{make eval} (writes \texttt{results/fid\_scores.json}); \texttt{make additional-samples}; \texttt{make report-figures} (methodology plots under \texttt{notebooks/plots/}). Optional chimera: \texttt{make download-dogcat}, \texttt{make process-dogcat-chimera}, \texttt{make chimera}. Monitor runs with \texttt{make mlflow} (UI on port~5050).
+
+  \item[Report figures and tables.] Execute analysis notebooks from \texttt{notebooks/} (e.g.\ \texttt{jupyter nbconvert --execute notebooks/01\_fid\_analysis.ipynb}) to refresh \texttt{notebooks/plots/results/} and \texttt{notebooks/report\_snippets/} (including \texttt{fid\_table.tex} and \texttt{mlflow\_summary.tex}). Rebuild the PDF with \texttt{pdflatex report.tex} inside \texttt{report/}.
+
+  \item[Configuration.] Hyperparameter grids and seeds live in \texttt{src/gen\_cats/config.py} (\texttt{GRIDS}). For a single debug run: \texttt{make train-vae MODEL=beta\_vae SEED=42}, \texttt{make train-gan MODEL=wgan\_gp SEED=42}, etc. Exported metrics used in the Results section are under \texttt{results/} and \texttt{notebooks/report\_snippets/}.
+\end{description}
+
+\section{Additional Promising Samples}
+\label{app:promising_samples}
+
+Figure~\ref{fig:appendix_runners_up} highlights runner-up hyperparameter cells from the FID export: SN-GAN ranks~2--3 (FID $240.9$ and $242.0$), WGAN-GP rank~5 (FID $228.0$; ranks~2--4 decoded to noisier boards despite similar FID), and $\beta$-VAE rank~2 (FID $282.5$). These grids show that multiple GAN cells yield recognizable cat portraits, not only the single best-FID slug.
+
+Figure~\ref{fig:appendix_chimera} shows chimera WGAN-GP boards for all three seeds. Hybrid muzzles and ear shapes appear across seeds even though we did not compute FID on this split.
+
+\begin{figure*}[!htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{appendix_promising_runners_up.png}
+    \caption{Runner-up checkpoint sample grids from the FID-ranked cat-face sweep (full $4 \times 4$ boards).}
+    \label{fig:appendix_runners_up}
+\end{figure*}
+
+\begin{figure*}[!htbp]
+    \centering
+    \includegraphics[width=\textwidth]{appendix_chimera_samples.png}
+    \caption{Chimera WGAN-GP sample grids from \texttt{checkpoints/chimera/wgan\_gp/} (three seeds).}
+    \label{fig:appendix_chimera}
+\end{figure*}
 
 \end{document}
