@@ -4,7 +4,7 @@ MLFLOW_PORT := 5050
 .PHONY: help setup download-data download-dogcat process-data process-dogcat process-dogcat-chimera \
         train-vae train-gan train-dm train-pixelcnn pixelcnn-experiment \
         select-vqvae-priors sweep-vae sweep-gan sweep-dm run-all \
-        eval eval-fid interpolate chimera \
+        eval eval-fid interpolate additional-samples chimera report-figures \
         mlflow test lint format pre-commit pre-commit-all clean
 
 help:
@@ -28,6 +28,8 @@ help:
 	@echo "  make eval             - FID + interpolations (x3 seeds each)"
 	@echo "  make eval-fid         - FID for all 7 model families (x3 seeds)"
 	@echo "  make interpolate      - interpolation (best FID cell from results/fid_scores.json)"
+	@echo "  make additional-samples - sample grids from all best_seed*.pt checkpoints"
+	@echo "  make report-figures   - generate LaTeX figures under notebooks/plots/"
 	@echo "  make chimera          - 64x64 WGAN-GP on dog+cat mix (needs process-dogcat-chimera)"
 	@echo "  make mlflow           - start local MLflow UI"
 	@echo "  make test             - run tests"
@@ -117,8 +119,16 @@ eval-fid:
 interpolate:
 	$(PYTHON) scripts/interpolate.py
 
+additional-samples:
+	$(PYTHON) scripts/generate_additional_samples.py \
+		$(if $(N),--n-samples $(N),) \
+		$(if $(SKIP_EXISTING),--skip-existing,)
+
 chimera:
 	$(PYTHON) scripts/chimera.py
+
+report-figures:
+	$(PYTHON) scripts/generate_report_figures.py
 
 # ─── MLflow ───────────────────────────────────────────────────
 mlflow:
