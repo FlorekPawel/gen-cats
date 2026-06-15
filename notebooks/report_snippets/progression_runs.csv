@@ -1,0 +1,6 @@
+model,slug,n_epoch_samples,figure
+wgan_gp,2b449afde8bc,14,progression_all_best_fid.png
+beta_vae,996f47caca39,14,progression_all_best_fid.png
+vqvae,3acd0306b276,24,progression_all_best_fid.png
+sn_gan,737a5766e176,14,progression_all_best_fid.png
+pixelcnn,099fc9ce2263,18,progression_all_best_fid.png

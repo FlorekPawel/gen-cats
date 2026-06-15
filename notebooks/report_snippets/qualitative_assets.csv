@@ -1,0 +1,8 @@
+model,label,slug,mean_fid,image
+beta_vae,$\beta$-VAE,996f47caca39,278.2905466980558,/Users/pawelp/Desktop/education/pw/deepl/gen-cats/checkpoints/beta_vae/996f47caca39/additional_samples.png
+vqvae,VQ-VAE-1,3acd0306b276,243.51046802288295,/Users/pawelp/Desktop/education/pw/deepl/gen-cats/checkpoints/vqvae/3acd0306b276/additional_samples.png
+pixelcnn,PixelCNN,099fc9ce2263,267.631482051431,/Users/pawelp/Desktop/education/pw/deepl/gen-cats/checkpoints/pixelcnn/099fc9ce2263/additional_samples.png
+wgan_gp,WGAN-GP,2b449afde8bc,174.4026208382076,/Users/pawelp/Desktop/education/pw/deepl/gen-cats/checkpoints/wgan_gp/2b449afde8bc/additional_samples.png
+sn_gan,SN-GAN,737a5766e176,226.13155201083208,/Users/pawelp/Desktop/education/pw/deepl/gen-cats/checkpoints/sn_gan/737a5766e176/additional_samples.png
+tiny_ldm,Tiny LDM (prior exp.),prior_comparison,,/Users/pawelp/Desktop/education/pw/deepl/gen-cats/results/prior_comparison/seed_42/tiny_ldm_samples.png
+ddim,DDIM (legacy),1ca4ccebe534,,/Users/pawelp/Desktop/education/pw/deepl/gen-cats/checkpoints/old_ddim/1ca4ccebe534/samples_best.png
