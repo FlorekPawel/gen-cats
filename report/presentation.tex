@@ -67,6 +67,14 @@
   \end{beamercolorbox}
 }
 
+% Tighter comment box when the figure needs more vertical room.
+\newcommand{\slidecommenttight}[1]{%
+  \vspace{0.12em}
+  \begin{beamercolorbox}[wd=\linewidth,rounded=true,sep=0.45ex]{block body}
+    \small #1
+  \end{beamercolorbox}
+}
+
 \newcommand{\slidefigure}[2][]{%
   \begin{center}
   \adjustbox{max width=\linewidth, max height=0.50\textheight, keepaspectratio, center, #1}{%
@@ -83,6 +91,16 @@
   \end{center}
 }
 
+% Single figure: max size while leaving room for subtitle + comment.
+\newcommand{\slidefigurefull}[2][]{%
+  \vspace{-0.15em}%
+  \begin{center}%
+  \adjustbox{width=\linewidth, max height=0.58\textheight, keepaspectratio, center, #1}{%
+    \includegraphics{#2}%
+  }%
+  \end{center}%
+}
+
 % Two wide figures on one slide (shared vertical budget).
 \newcommand{\slidefigurepair}[2]{%
   \vspace{-0.35em}
@@ -93,6 +111,18 @@
   \adjustbox{max width=\linewidth, max height=0.22\textheight, keepaspectratio, center}{%
     \includegraphics{#2}}%
   \end{center}
+}
+
+% Two wide figures: max size while leaving room for subtitle + comment.
+\newcommand{\slidefigurepairfull}[2]{%
+  \vspace{-0.15em}%
+  \begin{center}%
+  \adjustbox{width=\linewidth, max height=0.29\textheight, keepaspectratio, center}{%
+    \includegraphics{#1}}%
+  \par\vspace{0.08em}%
+  \adjustbox{width=\linewidth, max height=0.27\textheight, keepaspectratio, center}{%
+    \includegraphics{#2}}%
+  \end{center}%
 }
 
 \newcommand{\slidestrip}[2][]{%
@@ -173,8 +203,8 @@
 
 \begin{frame}{Do the Samples Match the Scores?}
   \framesubtitle{Sharp GAN faces; soft VAEs; diverse poses on cat-only data}
-  \slidefigureshort{samples_best_per_family.png}
-  \slidecomment{\textbf{Mode collapse:} not obvious on WGAN-GP/SN-GAN boards---varied colors and poses. Next slide zooms into GAN vs.\ VAE; diffusion families sit between on the full grid.}
+  \slidefigurefull{samples_best_per_family.png}
+  \slidecommenttight{\textbf{Mode collapse:} not obvious on WGAN-GP/SN-GAN boards---varied colors and poses. Next slide zooms into GAN vs.\ VAE; diffusion families sit between on the full grid.}
   \timingnote{60\,s. Orient the audience across all seven families; save the GAN--VAE contrast for the next slide.}
 \end{frame}
 
@@ -211,9 +241,8 @@
 
 \begin{frame}{What Happens on Dogs + Cats?}
   \framesubtitle{Chimera extension: unconditional WGAN-GP at $64 \times 64$}
-  \slidefigurepair{chimera_panel.png}{chimera_progress_chimera_64_seed0.png}
-  \vspace{-0.1em}
-  \slidecomment{\textbf{Contrast:} cat-only WGAN-GP $\rightarrow$ clean faces (sample slides). Mixed data $\rightarrow$ hybrids, not separate dog and cat modes.}
+  \slidefigurepairfull{chimera_panel.png}{chimera_progress_chimera_64_seed0.png}
+  \slidecommenttight{\textbf{Contrast:} cat-only WGAN-GP $\rightarrow$ clean faces (sample slides). Mixed data $\rightarrow$ hybrids, not separate dog and cat modes.}
   \timingnote{60\,s. Top: three seeds; bottom: training progression for seed~0.}
 \end{frame}
 
