@@ -1,0 +1,16 @@
+model,seed,run_uuid,status,metric,n_points
+beta_vae,0,2c3f597c21b946f1a96e92f0ef7c2905,FINISHED,val/recon,36
+beta_vae,42,014a90b683c041f98279616cd3689fea,FINISHED,val/recon,58
+beta_vae,3407,6a9a9a5fe69c4ccc8e8d5e8281b1c737,FINISHED,val/recon,67
+vqvae,0,6e201f64facc464485ce53d4b7e28050,FINISHED,val/recon,208
+vqvae,42,f19fbfb1fc8f44348f8994760ae6e31e,FINISHED,val/recon,223
+vqvae,3407,166da73cbfde488280112ee6717166c3,FINISHED,val/recon,116
+pixelcnn,0,a8ffcbb748c14c2f8670375328f16862,FINISHED,val/loss,147
+pixelcnn,42,32ab516d88734cdd88e9a02b062b2c78,FINISHED,val/loss,185
+pixelcnn,3407,35f38008256d4da6baae25e28b158322,FINISHED,val/loss,176
+wgan_gp,0,7296ad61c99f4fa9b2223e005d4e3d4d,FINISHED,val/g_loss,47
+wgan_gp,42,1533197b52ae4a4c9861599411f896c9,FINISHED,val/g_loss,47
+wgan_gp,3407,109da513b45449f1850ccbd7fcc0deb6,FINISHED,val/g_loss,67
+sn_gan,0,824ab841c1dd4131832fbd9314f3da42,FINISHED,val/g_loss,46
+sn_gan,42,3fdcaae07bdb4d71b7e9f2262bf8e794,FINISHED,val/g_loss,70
+sn_gan,3407,e59379c0d29d47b584a31b90ca99e77a,FINISHED,val/g_loss,39

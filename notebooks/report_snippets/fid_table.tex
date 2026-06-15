@@ -1,0 +1,18 @@
+\begin{table}[H]
+    \centering
+    \caption{Best hyperparameter cell per model family (lowest mean FID).}
+    \label{tab:fid_best}
+    \begin{tabular}{lrl}
+        \toprule
+        \textbf{Model} & \textbf{FID} $\downarrow$ & \textbf{Best config} \\
+        \midrule
+        WGAN-GP & 174.4 & n$_c$=5, batch=128, sym \\
+        SN-GAN & 226.1 & n$_c$=1, batch=128, sym, no aug \\
+        VQ-VAE-1 & 243.5 & K=512, 8$\times$8, MSE \\
+        PixelCNN & 267.6 & VQ 16$\times$16, K=512 \\
+        $\beta$-VAE & 278.3 & z=128, $\beta$=1.0 \\
+        \midrule
+        \multicolumn{3}{l}{\textit{No FID eval: Tiny LDM, DDIM}} \\
+        \bottomrule
+    \end{tabular}
+\end{table}

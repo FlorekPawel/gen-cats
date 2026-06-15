@@ -1,0 +1,6 @@
+model,fid_evals,with_samples_best,with_epoch_grids
+beta_vae,12,12,131
+pixelcnn,3,3,52
+sn_gan,24,24,234
+vqvae,24,24,797
+wgan_gp,24,24,222
