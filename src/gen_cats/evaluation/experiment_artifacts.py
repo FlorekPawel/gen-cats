@@ -383,9 +383,7 @@ def training_summary_by_model(
         timed = finished
         if "duration_s" in finished.columns and "final_epoch" in finished.columns:
             epochs = pd.to_numeric(finished["final_epoch"], errors="coerce")
-            timed = finished[
-                finished["duration_s"].notna() & epochs.notna() & (epochs > 0)
-            ].copy()
+            timed = finished[finished["duration_s"].notna() & epochs.notna() & (epochs > 0)].copy()
         rows.append(
             {
                 "model_type": model_type,

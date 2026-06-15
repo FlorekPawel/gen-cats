@@ -100,7 +100,9 @@ def generate_all(*, allow_synthetic: bool = True) -> None:
         _save_grid(dogcat, PLOTS_DIR / "processed_samples_dogcat.png", dpi=300)
     elif allow_synthetic:
         logger.warning("Missing dogcat .npy — writing synthetic mixed-species grid")
-        _save_grid(_synthetic_panel(4, 64, seed=2), PLOTS_DIR / "processed_samples_dogcat.png", dpi=300)
+        _save_grid(
+            _synthetic_panel(4, 64, seed=2), PLOTS_DIR / "processed_samples_dogcat.png", dpi=300
+        )
     else:
         raise FileNotFoundError("No dogcat_train_64.npy or dogcat_train.npy found")
 

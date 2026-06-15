@@ -39,9 +39,7 @@ def split_sample_grid(path: Path, grid: int = 4) -> list[np.ndarray]:
     tiles: list[np.ndarray] = []
     for row in range(grid):
         for col in range(grid):
-            tiles.append(
-                img[row * tile_h : (row + 1) * tile_h, col * tile_w : (col + 1) * tile_w]
-            )
+            tiles.append(img[row * tile_h : (row + 1) * tile_h, col * tile_w : (col + 1) * tile_w])
     return tiles
 
 
