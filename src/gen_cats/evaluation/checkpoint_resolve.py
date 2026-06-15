@@ -26,6 +26,11 @@ def _seed_from_checkpoint_name(path: Path) -> int | None:
     return int(match.group(1))
 
 
+def seed_from_checkpoint_name(path: Path) -> int | None:
+    """Parse training seed from ``{best|latest}_seed{N}.pt`` stem."""
+    return _seed_from_checkpoint_name(path)
+
+
 def discover_checkpoints(
     checkpoint_dir: str | Path,
     model_type: str,
