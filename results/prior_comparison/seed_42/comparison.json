@@ -1,0 +1,15 @@
+{
+  "seed": 42,
+  "vqvae_seed": 42,
+  "num_embeddings": 512,
+  "feature_map_size": 16,
+  "recon_loss": "mse",
+  "n_samples": 16,
+  "pixelcnn_checkpoint": "checkpoints/pixelcnn/e8b7a925fdaf/best_seed42.pt",
+  "tiny_ldm_checkpoint": "checkpoints/tiny_ldm/4968b94b662b/best_seed42.pt",
+  "pixelcnn_seconds": 4.161595207871869,
+  "tiny_ldm_seconds": 0.8302529999054968,
+  "pixelcnn_seconds_per_image": 0.2600997004919918,
+  "tiny_ldm_seconds_per_image": 0.05189081249409355,
+  "speedup_ldm_over_pixelcnn": 5.012442241516213
+}

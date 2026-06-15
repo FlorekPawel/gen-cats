@@ -1,0 +1,61 @@
+{
+  "seeds": [
+    42,
+    0,
+    3407
+  ],
+  "num_embeddings": 512,
+  "feature_map_size": 16,
+  "recon_loss": "mse",
+  "n_samples": 16,
+  "per_seed": [
+    {
+      "seed": 42,
+      "vqvae_seed": 42,
+      "num_embeddings": 512,
+      "feature_map_size": 16,
+      "recon_loss": "mse",
+      "n_samples": 16,
+      "pixelcnn_checkpoint": "checkpoints/pixelcnn/e8b7a925fdaf/best_seed42.pt",
+      "tiny_ldm_checkpoint": "checkpoints/tiny_ldm/4968b94b662b/best_seed42.pt",
+      "pixelcnn_seconds": 4.161595207871869,
+      "tiny_ldm_seconds": 0.8302529999054968,
+      "pixelcnn_seconds_per_image": 0.2600997004919918,
+      "tiny_ldm_seconds_per_image": 0.05189081249409355,
+      "speedup_ldm_over_pixelcnn": 5.012442241516213
+    },
+    {
+      "seed": 0,
+      "vqvae_seed": 0,
+      "num_embeddings": 512,
+      "feature_map_size": 16,
+      "recon_loss": "mse",
+      "n_samples": 16,
+      "pixelcnn_checkpoint": "checkpoints/pixelcnn/32a45e7e8ab6/best_seed0.pt",
+      "tiny_ldm_checkpoint": "checkpoints/tiny_ldm/77b49ba7c148/best_seed0.pt",
+      "pixelcnn_seconds": 4.187360333977267,
+      "tiny_ldm_seconds": 0.8236870421096683,
+      "pixelcnn_seconds_per_image": 0.2617100208735792,
+      "tiny_ldm_seconds_per_image": 0.051480440131854266,
+      "speedup_ldm_over_pixelcnn": 5.083678775924884
+    },
+    {
+      "seed": 3407,
+      "vqvae_seed": 3407,
+      "num_embeddings": 512,
+      "feature_map_size": 16,
+      "recon_loss": "mse",
+      "n_samples": 16,
+      "pixelcnn_checkpoint": "checkpoints/pixelcnn/099fc9ce2263/best_seed3407.pt",
+      "tiny_ldm_checkpoint": "checkpoints/tiny_ldm/e8e3810e09ea/best_seed3407.pt",
+      "pixelcnn_seconds": 4.153189666103572,
+      "tiny_ldm_seconds": 0.7651519579812884,
+      "pixelcnn_seconds_per_image": 0.25957435413147323,
+      "tiny_ldm_seconds_per_image": 0.04782199737383053,
+      "speedup_ldm_over_pixelcnn": 5.427927907367567
+    }
+  ],
+  "mean_pixelcnn_seconds_per_image": 0.26046135849901475,
+  "mean_tiny_ldm_seconds_per_image": 0.05039774999992611,
+  "mean_speedup_ldm_over_pixelcnn": 5.174682974936221
+}
