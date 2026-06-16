@@ -132,7 +132,6 @@
 \newcommand{\timingnote}[1]{\note{#1}}
 
 \title{Generative Models for Cat Face Synthesis}
-\subtitle{Which architecture wins on the same $128 \times 128$ cat faces?}
 \author{Paweł Pozorski \and Paweł Florek}
 \institute{Warsaw University of Technology}
 \date{\today}
@@ -201,14 +200,13 @@
 \begin{frame}{FID Leaderboard}
   \framesubtitle{Stabilized GANs beat VAEs and VQ-prior baselines}
   \slidefigure{fid_best_runs.png}
-  \slidecomment{\textbf{Headline:} WGAN-GP $174.4$, SN-GAN $226.1$. VAEs and PixelCNN trail above $240$. DDIM/Tiny LDM trained but missing from the FID export.}
   \timingnote{75\,s. Pause on the gap between GAN and VAE bars.}
 \end{frame}
 
 \begin{frame}{Hyperparameters Move the Needle}
   \framesubtitle{Best vs.\ worst grid cell can differ by $>110$ FID points}
   \slidefigure{fid_grid_distribution.png}
-  \slidecomment{\textbf{Winners:} batch $128$, symmetric learning rates, $n_{\text{critic}}{=}5$ (WGAN-GP). SN-GAN: turn off hflip aug.\ on the best cell.}
+  \slidecomment{\textbf{Winners:} batch $128$, symmetric learning rates, $n_{\text{critic}}{=}5$ (WGAN-GP).}
   \timingnote{60\,s. ``Tuning matters as much as picking the family.''}
 \end{frame}
 
@@ -217,14 +215,14 @@
 \begin{frame}{Do the Samples Match the Scores?}
   \framesubtitle{Sharp GAN faces; soft VAEs; diverse poses on cat-only data}
   \slidefigurefull{samples_best_per_family.png}
-  \slidecommenttight{\textbf{Mode collapse:} not obvious on WGAN-GP/SN-GAN boards---varied colors and poses. Next slide zooms into GAN vs.\ VAE; diffusion families sit between on the full grid.}
+  \slidecommenttight{\textbf{Mode collapse:} not obvious on WGAN-GP/SN-GAN boards---varied colors and poses.}
   \timingnote{60\,s. Orient the audience across all seven families; save the GAN--VAE contrast for the next slide.}
 \end{frame}
 
 \begin{frame}{GAN vs.\ VAE Head-to-Head}
   \framesubtitle{Best checkpoint per family: FID $174.4$ vs.\ $278.3$}
   \slidefigure{samples_gan_vs_vae.png}
-  \slidecomment{\textbf{Gap:} WGAN-GP keeps whiskers, eyes, and fur texture. $\beta$-VAE captures pose and color but blurs fine structure---the usual VAE trade-off.}
+  \slidecomment{\textbf{Gap:} WGAN-GP keeps whiskers, eyes, and fur texture. $\beta$-VAE captures pose, but blurs fine structure---the usual VAE trade-off.}
   \timingnote{45\,s. Left grid, then right; let the visual difference land before speaking.}
 \end{frame}
 
