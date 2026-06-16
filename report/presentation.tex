@@ -177,9 +177,22 @@
     VQ prior & PixelCNN (+ fixed Tiny LDM for timing) \\
     \bottomrule
   \end{tabular}
-  \vspace{0.5em}
+  \vspace{0.45em}
 
-  Grid: $44$ hyperparameter cells $\times$ 3 seeds. GANs use stabilization (GP / spectral norm) to limit mode collapse.
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    \textbf{Family} & \textbf{Hyperparam grid} \\
+    \midrule
+    $\beta$-VAE & latent\_dim $\{64,128\}$, $\beta$ $\{1,4\}$ \\
+    VQ-VAE-1 & $K$ $\{512,1024\}$, fmap $\{16,8\}$, recon $\{$L1,MSE$\}$ \\
+    WGAN-GP & $n_{\text{critic}}$ $\{3,5\}$, bs $\{64,128\}$, $\mathrm{lr}_D$ $\{2,4\}\times 10^{-4}$ \\
+    SN-GAN & bs $\{64,128\}$, $\mathrm{lr}_D$ $\{2,4\}\times 10^{-4}$, hflip $\{$off,on$\}$ \\
+    DDIM / Tiny LDM & schedule $\{$lin,cos$\}$, base\_ch $\{64,128\}$, steps $\{50,100\}$ \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.25em}
+
+  Grid total: $44$ cells $\times$ 3 seeds. GANs use stabilization (GP / spectral norm) to limit mode collapse.
   \timingnote{75\,s. Point at the table; one line per family, then move on.}
 \end{frame}
 
