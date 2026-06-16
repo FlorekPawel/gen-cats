@@ -120,7 +120,7 @@ VAEs \cite{kingma2013auto}, GANs \cite{NIPS2014_f033ed80}, and diffusion models 
 
 We report FID on held-out validation faces, latent interpolations for $\beta$-VAE and WGAN-GP, a PixelCNN--tiny-LDM prior comparison on frozen VQ decoders, and a chimera extension on mixed dogs and cats at $64 \times 64$. WGAN-GP and SN-GAN replace a plain DCGAN to reduce mode collapse on this single-class dataset.
 
-Training comprised $141$ jobs ($138$ cat-face grid runs plus three chimera seeds). MLflow records $217$ cat-face runs ($157$ finished, $60$ failed; Table~\ref{tab:mlflow_summary}); chimera checkpoints are stored separately under \texttt{checkpoints/chimera/}. Rankings and sample analysis follow in Section~\ref{sec:results}.
+Training comprised $141$ jobs ($138$ cat-face grid runs plus three chimera seeds). MLflow records $217$ cat-face runs; chimera checkpoints are stored separately under \texttt{checkpoints/chimera/}. Rankings and sample analysis follow in Section~\ref{sec:results}.
 
 \section{Methodology}
 \label{sec:methodology}
@@ -271,20 +271,13 @@ Figure~\ref{fig:fid_grid} shows the spread of FID across all evaluated grid cell
     \label{fig:fid_grid}
 \end{figure}
 
-All $217$ MLflow cat-face runs hit early stopping (Table~\ref{tab:mlflow_summary}, Figure~\ref{fig:mlflow_summary}). VQ-VAE failed most often ($27/57$); WGAN-GP ($33/41$ finished) and SN-GAN ($24/26$) were the most reliable main families. At best-FID settings (Figure~\ref{fig:training_curves}), GAN validation metrics settle in $\sim$40--70 epochs, while VQ-VAE and PixelCNN often ran past $150$.
+All $217$ MLflow cat-face runs hit early stopping (Table~\ref{tab:mlflow_summary}, Figure~\ref{fig:mlflow_summary}). At best-FID settings (Figure~\ref{fig:training_curves}), GAN validation metrics settle in $\sim$40--70 epochs, while VQ-VAE and PixelCNN often ran past $150$.
 
 Training wall-clock on Apple MPS (Table~\ref{tab:mlflow_summary}, finished runs only) separates \emph{epoch count} from \emph{work per epoch}. Tiny LDM is cheapest per epoch ($\sim$10\,s) but pixel DDIM is the slowest ($\sim$131\,s/epoch) and tends toward the longest total jobs (median $\sim$145\,min). WGAN-GP averages $\sim$187\,s per epoch---far above SN-GAN ($\sim$53\,s) because each epoch runs $n_{\text{critic}}$ discriminator updates---even though both stop near $40$--$43$ epochs. VQ-VAE trains $\sim$3$\times$ longer than $\beta$-VAE in epochs (median $151$ vs.\ $43$) at similar per-epoch cost ($\sim$18--27\,s), so total time still exceeds the GANs. These timings mix grid cells and batch sizes; they complement the prior-comparison sampling benchmark (PixelCNN vs.\ Tiny LDM inference only).
 
 Sample boards for WGAN-GP and SN-GAN (Figure~\ref{fig:samples_best}) show varied poses and colors without collapsing to a single template. WGAN-GP also has the tightest FID spread across grid cells (Figure~\ref{fig:fid_grid}). Figure~\ref{fig:fid_vs_mlflow} plots per-seed FID against each run's best logged validation metric: lower VAE reconstruction loss and more negative WGAN critic values tend to pair with better FID, but the link is noisy across cells.
 
 \input{../notebooks/report_snippets/mlflow_summary.tex}
-
-\begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=\linewidth]{mlflow_run_summary.png}
-    \caption{MLflow outcomes per model family (finished vs.\ failed runs, median epochs, median minutes per epoch).}
-    \label{fig:mlflow_summary}
-\end{figure}
 
 \begin{figure*}[!htbp]
     \centering
@@ -398,11 +391,11 @@ Stabilized GANs ranked highest on FID for $128 \times 128$ cat faces; within WGA
 
 PixelCNN sampled about $5\times$ slower than tiny LDM through the same decoder and still failed to produce recognizable cats. On mixed dog--cat data, the chimera WGAN-GP blended species rather than separating them; class labels would be needed for controlled multi-class generation.
 
-VQ-VAE had the highest training failure rate ($27/57$ runs), SN-GAN horizontal flip often hurt FID, and validation metrics only loosely predicted FID across grid cells. Limitations include incomplete per-seed FID coverage, missing diffusion FIDs, a single saved interpolation seed, and MPS-specific timings. Next steps: export diffusion FIDs, score all three seeds per grid cell, and try class-conditional training on mixed data.
+SN-GAN horizontal flip often hurt FID, and validation metrics only loosely predicted FID across grid cells. Limitations include incomplete per-seed FID coverage, missing diffusion FIDs, a single saved interpolation seed, and MPS-specific timings. Next steps: export diffusion FIDs, score all three seeds per grid cell, and try class-conditional training on mixed data.
 
 \section{AI Disclosure}
 
-Parts of this report were edited with AI tools for wording and formatting; experiments, hyperparameter choices, and conclusions are the authors'.
+This report was edited with AI assistance, to improve clarity, consistency, and formatting. Part of the docstrings, some phrasing and code refactoring or debugging were refined using AI tools, but all scientific decisions and interpretations are the authors' own. The core content, experimental design, and analysis were developed by the authors.
 
 \bibliographystyle{IEEEtran}
 \bibliography{mybib}

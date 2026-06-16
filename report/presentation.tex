@@ -229,21 +229,20 @@
   \timingnote{60\,s. Trace one morph left-to-right with your cursor.}
 \end{frame}
 
-\begin{frame}{Speed vs.\ Autoregression on VQ Codes}
+\begin{frame}{TinyLDM vs. PixelCNN on VQ Codes}
   \framesubtitle{Same decoder; different prior}
   \vspace{-0.2em}
   \begin{center}
   \adjustbox{width=0.98\linewidth, center}{\includegraphics{prior_samples_panel.png}}%
   \end{center}
-  \slidecomment{\textbf{Trade-off:} Tiny LDM samples $\sim$5$\times$ faster ($0.050$ vs.\ $0.260$\,s/image on MPS), but these checkpoints decode to unstructured noise. PixelCNN is slower yet retains weak coarse blobs---neither is a usable cat prior here.}
-  \timingnote{45\,s. Lead with the speed numbers, then the visual failure of Tiny LDM.}
+  \timingnote{45\,s. Lead with the speed numbers, then the visual collapse of Tiny LDM.}
 \end{frame}
 
 \begin{frame}{What Happens on Dogs + Cats?}
   \framesubtitle{Chimera extension: unconditional WGAN-GP at $64 \times 64$}
-  \slidefigurepairfull{chimera_panel.png}{chimera_progress_chimera_64_seed0.png}
-  \slidecommenttight{\textbf{Contrast:} cat-only WGAN-GP $\rightarrow$ clean faces (sample slides). Mixed data $\rightarrow$ hybrids, not separate dog and cat modes.}
-  \timingnote{60\,s. Top: three seeds; bottom: training progression for seed~0.}
+  \slidefigurefull{chimera_panel.png}
+  \slidecommenttight{\textbf{Contrast:} cat-only WGAN-GP gives clean cat faces; mixed dog+cat training yields hybrids rather than separate class modes.}
+  \timingnote{45\,s. One panel only: highlight mixed traits across seeds.}
 \end{frame}
 
 \section{Close}
